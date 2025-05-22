@@ -10,9 +10,10 @@ async function bootstrap() {
     logger: LoggerConfig.getLogLevels(),
   });
 
-  // Aplicamos nuestras configuraciones globales en el orden correcto
-  app.useGlobalFilters(new GlobalExceptionFilter()); // Primero los errores
-  app.useGlobalInterceptors(new ResponseTransformInterceptor()); // Luego las respuestas exitosas
+  // Ahora solo necesitamos un filtro que maneja todo inteligentemente
+  app.useGlobalFilters(new GlobalExceptionFilter());
+
+  app.useGlobalInterceptors(new ResponseTransformInterceptor());
 
   app.useGlobalPipes(
     new ValidationPipe({
@@ -29,6 +30,6 @@ async function bootstrap() {
   logger.log(`🚀 Aplicación iniciada en puerto ${port}`);
   logger.log(`🌍 Entorno: ${process.env.NODE_ENV || 'development'}`);
   logger.log(`🗄️  Base de datos: ${process.env.DB_HOST}:${process.env.DB_PORT}`);
-  logger.log(`✅ Configuraciones globales aplicadas: Logging, Errores, Respuestas`);
+  logger.log(`✅ Filtro global inteligente configurado correctamente`);
 }
 bootstrap();

@@ -5,19 +5,23 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { databaseConfig } from './config/database.config';
 
+// Importamos nuestro nuevo módulo de roles
+import { RolModule } from './rol/infraestructura/config/rol.module';
+
 @Module({
   imports: [
-    // Configuración global de variables de entorno
     ConfigModule.forRoot({
       isGlobal: true,
-      envFilePath: '.env', // Explícitamente indicamos el archivo
+      envFilePath: '.env',
     }),
-    // Configuración de TypeORM usando factory pattern
     TypeOrmModule.forRootAsync({
-      imports: [ConfigModule], // Importamos ConfigModule para usar ConfigService
-      inject: [ConfigService], // Inyectamos ConfigService como dependencia
-      useFactory: databaseConfig, // Usamos nuestra función de configuración
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: databaseConfig,
     }),
+
+    // Agregamos el módulo de roles a nuestra aplicación
+    RolModule,
   ],
   controllers: [AppController],
   providers: [AppService],
