@@ -1,0 +1,2002 @@
+Código extraído el 22-05-2025, 4:08:25 p. m.
+
+
+// ==========================================
+// File: src\app.controller.spec.ts
+// ==========================================
+
+import { Test, TestingModule } from '@nestjs/testing';
+import { AppController } from './app.controller';
+import { AppService } from './app.service';
+
+describe('AppController', () => {
+  let appController: AppController;
+
+  beforeEach(async () => {
+    const app: TestingModule = await Test.createTestingModule({
+      controllers: [AppController],
+      providers: [AppService],
+    }).compile();
+
+    appController = app.get<AppController>(AppController);
+  });
+
+  describe('root', () => {
+    it('should return "Hello World!"', () => {
+      expect(appController.getHello()).toBe('Hello World!');
+    });
+  });
+});
+
+
+// ==========================================
+// File: src\app.controller.ts
+// ==========================================
+
+import { Controller, Get, Post, Body, HttpException, HttpStatus, Param } from '@nestjs/common';
+import { AppService } from './app.service';
+
+@Controller()
+export class AppController {
+  constructor(private readonly appService: AppService) { }
+
+  @Get()
+  getHello(): string {
+    // Respuesta simple de string
+    return this.appService.getHello();
+  }
+
+  @Get('usuarios')
+  obtenerUsuarios() {
+    // Respuesta con array de objetos
+    return [
+      { id: 1, nombre: 'Juan Pérez', email: 'juan@ejemplo.com' },
+      { id: 2, nombre: 'María García', email: 'maria@ejemplo.com' },
+    ];
+  }
+
+  @Get('usuario/:id')
+  obtenerUsuario(@Param('id') id: string) {
+    // Respuesta con objeto único
+    if (isNaN(Number(id))) {
+      throw new HttpException('El ID debe ser un número', HttpStatus.BAD_REQUEST);
+    }
+    return {
+      id: Number(id),
+      nombre: 'Usuario de ejemplo',
+      email: 'usuario@ejemplo.com',
+      fechaCreacion: new Date().toISOString()
+    };
+  }
+
+  @Post('usuario')
+  crearUsuario(@Body() datosUsuario: any) {
+    // Respuesta de creación
+    return {
+      id: Math.floor(Math.random() * 1000),
+      ...datosUsuario,
+      fechaCreacion: new Date().toISOString()
+    };
+  }
+
+  @Get('vacio')
+  respuestaVacia() {
+    // Probamos cómo maneja respuestas null/undefined
+    return null;
+  }
+}
+
+// ==========================================
+// File: src\app.module.ts
+// ==========================================
+
+import { Module } from '@nestjs/common';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { AppController } from './app.controller';
+import { AppService } from './app.service';
+import { databaseConfig } from './config/database.config';
+
+// Importamos nuestro nuevo módulo de roles
+import { RolModule } from './rol/infraestructura/config/rol.module';
+
+@Module({
+  imports: [
+    ConfigModule.forRoot({
+      isGlobal: true,
+      envFilePath: '.env',
+    }),
+    TypeOrmModule.forRootAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: databaseConfig,
+    }),
+
+    // Agregamos el módulo de roles a nuestra aplicación
+    RolModule,
+  ],
+  controllers: [AppController],
+  providers: [AppService],
+})
+export class AppModule { }
+
+// ==========================================
+// File: src\app.service.ts
+// ==========================================
+
+import { Injectable, Logger } from '@nestjs/common';
+
+@Injectable()
+export class AppService {
+  private readonly logger = new Logger(AppService.name);
+
+  getHello(): string {
+    // Probamos diferentes niveles de log
+    this.logger.verbose('Mensaje muy detallado para debugging profundo');
+    this.logger.debug('Información de debug para desarrollo');
+    this.logger.log('Información general del flujo de la aplicación');
+    this.logger.warn('Advertencia: algo puede no estar bien');
+
+    return 'Hello World!';
+  }
+}
+
+// ==========================================
+// File: src\common\filters\domain-exception.filter.ts
+// ==========================================
+
+import { ArgumentsHost, Catch, ExceptionFilter, HttpStatus } from '@nestjs/common';
+import { Response } from 'express';
+import {
+    RolDomainException,
+    RolNombreDuplicadoException,
+    RolNoEncontradoException,
+    RolInactivoException,
+    RolConDependenciasException,
+    RolDatosInvalidosException
+} from '../../rol/dominio/excepciones/rol-domain.exception';
+
+@Catch(RolDomainException) // Solo captura excepciones de dominio de roles
+export class DomainExceptionFilter implements ExceptionFilter {
+    catch(exception: RolDomainException, host: ArgumentsHost) {
+        const ctx = host.switchToHttp();
+        const response = ctx.getResponse<Response>();
+        const request = ctx.getRequest();
+
+        // Mapeamos cada tipo de excepción de dominio a un código HTTP específico
+        const statusCode = this.getHttpStatusFromDomainException(exception);
+        const errorCode = this.getErrorCodeFromDomainException(exception);
+
+        const errorResponse = {
+            success: false,
+            statusCode,
+            timestamp: new Date().toISOString(),
+            path: request.url,
+            method: request.method,
+            message: exception.message, // Usamos el mensaje específico de la excepción
+            errorCode,
+        };
+
+        response.status(statusCode).json(errorResponse);
+    }
+
+    private getHttpStatusFromDomainException(exception: RolDomainException): number {
+        // Cada tipo de excepción de dominio se mapea a un código HTTP específico
+        if (exception instanceof RolNombreDuplicadoException) {
+            return HttpStatus.CONFLICT; // 409 - Ya existe un recurso con esos datos
+        }
+
+        if (exception instanceof RolNoEncontradoException) {
+            return HttpStatus.NOT_FOUND; // 404 - El recurso no existe
+        }
+
+        if (exception instanceof RolInactivoException) {
+            return HttpStatus.FORBIDDEN; // 403 - El recurso existe pero no se puede operar
+        }
+
+        if (exception instanceof RolConDependenciasException) {
+            return HttpStatus.CONFLICT; // 409 - No se puede eliminar por dependencias
+        }
+
+        if (exception instanceof RolDatosInvalidosException) {
+            return HttpStatus.BAD_REQUEST; // 400 - Los datos enviados son incorrectos
+        }
+
+        // Para excepciones de dominio no específicas, usamos Bad Request
+        return HttpStatus.BAD_REQUEST;
+    }
+
+    private getErrorCodeFromDomainException(exception: RolDomainException): string {
+        // Códigos de error más específicos para que los clientes puedan reaccionar apropiadamente
+        if (exception instanceof RolNombreDuplicadoException) {
+            return 'ROL_NOMBRE_DUPLICADO';
+        }
+
+        if (exception instanceof RolNoEncontradoException) {
+            return 'ROL_NO_ENCONTRADO';
+        }
+
+        if (exception instanceof RolInactivoException) {
+            return 'ROL_INACTIVO';
+        }
+
+        if (exception instanceof RolConDependenciasException) {
+            return 'ROL_CON_DEPENDENCIAS';
+        }
+
+        if (exception instanceof RolDatosInvalidosException) {
+            return 'ROL_DATOS_INVALIDOS';
+        }
+
+        return 'ROL_ERROR_DOMINIO';
+    }
+}
+
+// ==========================================
+// File: src\common\filters\global-exception.filter.ts
+// ==========================================
+
+import {
+    ExceptionFilter,
+    Catch,
+    ArgumentsHost,
+    HttpException,
+    HttpStatus,
+    Logger,
+} from '@nestjs/common';
+import { Request, Response } from 'express';
+import {
+    RolDomainException,
+    RolNombreDuplicadoException,
+    RolNoEncontradoException,
+    RolInactivoException,
+    RolConDependenciasException,
+    RolDatosInvalidosException
+} from '../../rol/dominio/excepciones/rol-domain.exception';
+
+@Catch() // Captura TODAS las excepciones, pero las maneja inteligentemente
+export class GlobalExceptionFilter implements ExceptionFilter {
+    private readonly logger = new Logger(GlobalExceptionFilter.name);
+
+    catch(exception: unknown, host: ArgumentsHost): void {
+        const ctx = host.switchToHttp();
+        const response = ctx.getResponse<Response>();
+        const request = ctx.getRequest<Request>();
+
+        // Aquí está la magia: determinamos el tipo de excepción y la manejamos apropiadamente
+        const { status, message, errorCode } = this.determineErrorResponse(exception);
+
+        const errorResponse = {
+            success: false,
+            statusCode: status,
+            timestamp: new Date().toISOString(),
+            path: request.url,
+            method: request.method,
+            message,
+            errorCode,
+        };
+
+        // Logeamos con diferente nivel según el tipo de error
+        this.logError(exception, request, status);
+
+        response.status(status).json(errorResponse);
+    }
+
+    private determineErrorResponse(exception: unknown): {
+        status: number;
+        message: string;
+        errorCode: string;
+    } {
+        // PASO 1: Verificamos si es una excepción de dominio (errores de negocio)
+        if (this.isDomainException(exception)) {
+            return this.handleDomainException(exception as RolDomainException);
+        }
+
+        // PASO 2: Verificamos si es una HttpException de NestJS (errores controlados)
+        if (exception instanceof HttpException) {
+            const status = exception.getStatus();
+            const response = exception.getResponse();
+
+            return {
+                status,
+                message: typeof response === 'string' ? response : (response as any).message || exception.message,
+                errorCode: this.getErrorCodeFromHttpStatus(status),
+            };
+        }
+
+        // PASO 3: Para todo lo demás, es un error interno del servidor
+        return {
+            status: HttpStatus.INTERNAL_SERVER_ERROR,
+            message: 'Error interno del servidor',
+            errorCode: 'INTERNAL_SERVER_ERROR',
+        };
+    }
+
+    // Método que verifica si una excepción es de dominio
+    private isDomainException(exception: unknown): boolean {
+        // Verificamos tanto por instanceof como por el nombre de la clase
+        // Esto es importante porque a veces los imports pueden causar problemas con instanceof
+        return exception instanceof RolDomainException ||
+            (exception instanceof Error && exception.constructor.name.includes('DomainException'));
+    }
+
+    // Método especializado para manejar excepciones de dominio
+    private handleDomainException(exception: RolDomainException): {
+        status: number;
+        message: string;
+        errorCode: string;
+    } {
+        // Mapeamos cada tipo específico de excepción de dominio
+        if (exception instanceof RolNombreDuplicadoException) {
+            return {
+                status: HttpStatus.CONFLICT,
+                message: exception.message,
+                errorCode: 'ROL_NOMBRE_DUPLICADO',
+            };
+        }
+
+        if (exception instanceof RolNoEncontradoException) {
+            return {
+                status: HttpStatus.NOT_FOUND,
+                message: exception.message,
+                errorCode: 'ROL_NO_ENCONTRADO',
+            };
+        }
+
+        if (exception instanceof RolInactivoException) {
+            return {
+                status: HttpStatus.FORBIDDEN,
+                message: exception.message,
+                errorCode: 'ROL_INACTIVO',
+            };
+        }
+
+        if (exception instanceof RolConDependenciasException) {
+            return {
+                status: HttpStatus.CONFLICT,
+                message: exception.message,
+                errorCode: 'ROL_CON_DEPENDENCIAS',
+            };
+        }
+
+        if (exception instanceof RolDatosInvalidosException) {
+            return {
+                status: HttpStatus.BAD_REQUEST,
+                message: exception.message,
+                errorCode: 'ROL_DATOS_INVALIDOS',
+            };
+        }
+
+        // Fallback para excepciones de dominio no específicas
+        return {
+            status: HttpStatus.BAD_REQUEST,
+            message: exception.message,
+            errorCode: 'DOMAIN_ERROR',
+        };
+    }
+
+    private getErrorCodeFromHttpStatus(status: number): string {
+        const statusToErrorCode: Record<number, string> = {
+            400: 'BAD_REQUEST',
+            401: 'UNAUTHORIZED',
+            403: 'FORBIDDEN',
+            404: 'NOT_FOUND',
+            409: 'CONFLICT',
+            422: 'VALIDATION_ERROR',
+            429: 'TOO_MANY_REQUESTS',
+            500: 'INTERNAL_SERVER_ERROR',
+        };
+
+        return statusToErrorCode[status] || 'UNKNOWN_ERROR';
+    }
+
+    private logError(exception: unknown, request: Request, status: number): void {
+        const message = `${request.method} ${request.url}`;
+
+        // Los errores de dominio (4xx) son menos críticos que los errores técnicos (5xx)
+        if (status >= 500) {
+            this.logger.error(
+                `${message} - ${status}`,
+                exception instanceof Error ? exception.stack : exception,
+            );
+        } else if (status >= 400) {
+            this.logger.warn(`${message} - ${status} - ${exception}`);
+        }
+    }
+}
+
+// ==========================================
+// File: src\common\interceptors\response-transform.interceptor.ts
+// ==========================================
+
+import {
+    Injectable,
+    NestInterceptor,
+    ExecutionContext,
+    CallHandler,
+} from '@nestjs/common';
+import { Observable } from 'rxjs';
+import { map } from 'rxjs/operators';
+import { Request } from 'express';
+
+// Definimos la estructura estándar de nuestras respuestas exitosas
+export interface StandardResponse<T> {
+    success: boolean;
+    statusCode: number;
+    timestamp: string;
+    path: string;
+    method: string;
+    data: T;
+    message?: string;
+}
+
+@Injectable()
+export class ResponseTransformInterceptor<T>
+    implements NestInterceptor<T, StandardResponse<T>> {
+
+    intercept(
+        context: ExecutionContext,
+        next: CallHandler,
+    ): Observable<StandardResponse<T>> {
+        // Obtenemos información del contexto de la petición
+        const ctx = context.switchToHttp();
+        const request = ctx.getRequest<Request>();
+        const response = ctx.getResponse();
+
+        // Ejecutamos el handler y transformamos la respuesta
+        return next.handle().pipe(
+            map((data) => {
+                // Este es el corazón del interceptor: transformamos cualquier respuesta
+                // a nuestro formato estándar
+                return this.transformResponse(data, request, response.statusCode);
+            }),
+        );
+    }
+
+    private transformResponse<T>(
+        data: T,
+        request: Request,
+        statusCode: number,
+    ): StandardResponse<T> {
+        // Construimos la respuesta estándar que siempre tendrá la misma estructura
+        return {
+            success: true, // Para respuestas exitosas, siempre es true
+            statusCode,
+            timestamp: new Date().toISOString(),
+            path: request.url,
+            method: request.method,
+            data: this.processData(data), // Procesamos los datos según el tipo
+            message: this.generateSuccessMessage(request.method), // Mensaje contextual
+        };
+    }
+
+    private processData<T>(data: T): T {
+        // Si los datos ya vienen en el formato que esperamos, los retornamos tal como están
+        if (data === null || data === undefined) {
+            return data;
+        }
+
+        // Si es un array, podríamos agregar metadatos como count en el futuro
+        if (Array.isArray(data)) {
+            return data;
+        }
+
+        // Para objetos simples, los retornamos sin modificaciones
+        return data;
+    }
+
+    private generateSuccessMessage(method: string): string {
+        // Generamos mensajes contextualmente útiles basados en el método HTTP
+        const methodMessages: Record<string, string> = {
+            GET: 'Datos obtenidos exitosamente',
+            POST: 'Recurso creado exitosamente',
+            PUT: 'Recurso actualizado exitosamente',
+            PATCH: 'Recurso actualizado parcialmente',
+            DELETE: 'Recurso eliminado exitosamente',
+        };
+
+        return methodMessages[method] || 'Operación completada exitosamente';
+    }
+}
+
+// ==========================================
+// File: src\config\database.config.ts
+// ==========================================
+
+import { TypeOrmModuleOptions } from '@nestjs/typeorm';
+import { ConfigService } from '@nestjs/config';
+
+export const databaseConfig = (configService: ConfigService): TypeOrmModuleOptions => {
+    // Validamos que las variables de entorno existan
+    const host = configService.get<string>('DB_HOST');
+    const port = configService.get<string>('DB_PORT');
+    const username = configService.get<string>('DB_USERNAME');
+    const password = configService.get<string>('DB_PASSWORD');
+    const database = configService.get<string>('DB_DATABASE');
+
+    // Si alguna variable crítica no existe, lanzamos un error explicativo
+    if (!host || !port || !username || !password || !database) {
+        throw new Error('Variables de entorno de base de datos no configuradas correctamente');
+    }
+
+    return {
+        type: 'postgres',
+        host,
+        port: parseInt(port, 10), // Ahora sabemos que port no es undefined
+        username,
+        password,
+        database,
+        autoLoadEntities: true, // Carga automáticamente las entidades registradas
+        synchronize: false, // No modifica la estructura existente de la BD
+        logging: process.env.NODE_ENV === 'development', // Solo log en desarrollo
+    };
+};
+
+// ==========================================
+// File: src\config\logger.config.ts
+// ==========================================
+
+import { LogLevel } from '@nestjs/common';
+
+export class LoggerConfig {
+    // Definimos los niveles de log según el entorno
+    static getLogLevels(): LogLevel[] {
+        const environment = process.env.NODE_ENV || 'development';
+
+        switch (environment) {
+            case 'production':
+                // En producción solo queremos errores y warnings críticos
+                return ['error', 'warn'];
+            case 'test':
+                // En testing solo errores para no contaminar los resultados
+                return ['error'];
+            case 'development':
+            default:
+                // En desarrollo queremos ver todo para debuggear
+                return ['error', 'warn', 'log', 'debug', 'verbose'];
+        }
+    }
+
+    // Configuramos el formato de timestamp personalizado
+    static getTimestamp(): string {
+        const now = new Date();
+        return now.toISOString().replace('T', ' ').substring(0, 19);
+    }
+}
+
+// ==========================================
+// File: src\main.ts
+// ==========================================
+
+import { NestFactory } from '@nestjs/core';
+import { ValidationPipe, Logger } from '@nestjs/common';
+import { AppModule } from './app.module';
+import { LoggerConfig } from './config/logger.config';
+import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
+import { ResponseTransformInterceptor } from './common/interceptors/response-transform.interceptor';
+
+async function bootstrap() {
+  const app = await NestFactory.create(AppModule, {
+    logger: LoggerConfig.getLogLevels(),
+  });
+
+  // Ahora solo necesitamos un filtro que maneja todo inteligentemente
+  app.useGlobalFilters(new GlobalExceptionFilter());
+
+  app.useGlobalInterceptors(new ResponseTransformInterceptor());
+
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,
+      transform: true,
+      forbidNonWhitelisted: true,
+    }),
+  );
+
+  const port = process.env.PORT || 3000;
+  await app.listen(port);
+
+  const logger = new Logger('Bootstrap');
+  logger.log(`🚀 Aplicación iniciada en puerto ${port}`);
+  logger.log(`🌍 Entorno: ${process.env.NODE_ENV || 'development'}`);
+  logger.log(`🗄️  Base de datos: ${process.env.DB_HOST}:${process.env.DB_PORT}`);
+  logger.log(`✅ Filtro global inteligente configurado correctamente`);
+}
+bootstrap();
+
+// ==========================================
+// File: src\rol\aplicacion\casos-uso\actualizar-rol.caso-uso.ts
+// ==========================================
+
+import { Logger } from '@nestjs/common';
+import { RolDominioService } from '../../dominio/servicios/rol-dominio.service';
+import { ActualizarRolDto } from '../dtos/actualizar-rol.dto';
+import { RolRespuestaDto } from '../dtos/rol-respuesta.dto';
+
+export class ActualizarRolCasoUso {
+    private readonly logger = new Logger(ActualizarRolCasoUso.name);
+
+    constructor(
+        private readonly rolDominioService: RolDominioService
+    ) { }
+
+    async ejecutar(
+        id: number,
+        datos: ActualizarRolDto,
+        idUsuarioEjecutor: number
+    ): Promise<RolRespuestaDto> {
+        try {
+            // Log con información específica sobre qué campos se están actualizando
+            const camposAActualizar = Object.keys(datos).filter(key => datos[key] !== undefined);
+            this.logger.log(
+                `Iniciando actualización de rol ID ${id} por usuario ${idUsuarioEjecutor}`,
+                { camposAActualizar } // Contexto estructurado adicional
+            );
+
+            const rolActualizado = await this.rolDominioService.actualizarRol(id, {
+                nombre: datos.nombre,
+                descripcion: datos.descripcion,
+                idUsuarioModificacion: idUsuarioEjecutor
+            });
+
+            this.logger.log(
+                `Rol actualizado exitosamente: ID ${id}`,
+                {
+                    nombreAnterior: datos.nombre ? 'actualizado' : 'sin cambios',
+                    descripcionAnterior: datos.descripcion !== undefined ? 'actualizada' : 'sin cambios'
+                }
+            );
+
+            return new RolRespuestaDto(rolActualizado);
+
+        } catch (error) {
+            this.logger.error(
+                `Error al actualizar rol ID ${id}: ${error.message}`,
+                {
+                    datosEntrada: {
+                        camposEnviados: Object.keys(datos),
+                        idRol: id
+                    },
+                    idUsuarioEjecutor,
+                    tipoError: error.constructor.name
+                }
+            );
+            throw error;
+        }
+    }
+}
+
+// ==========================================
+// File: src\rol\aplicacion\casos-uso\crear-rol.caso-uso.ts
+// ==========================================
+
+import { Logger } from '@nestjs/common';
+import { RolDominioService } from '../../dominio/servicios/rol-dominio.service';
+import { CrearRolDto } from '../dtos/crear-rol.dto';
+import { RolRespuestaDto } from '../dtos/rol-respuesta.dto';
+
+export class CrearRolCasoUso {
+    // Creamos una instancia de logger específica para este caso de uso
+    // El nombre de la clase se usa como contexto, lo que nos ayuda a identificar de dónde vienen los logs
+    private readonly logger = new Logger(CrearRolCasoUso.name);
+
+    constructor(
+        private readonly rolDominioService: RolDominioService
+    ) { }
+
+    async ejecutar(datos: CrearRolDto, idUsuarioEjecutor: number): Promise<RolRespuestaDto> {
+        try {
+            // Log de inicio con nivel 'log' (información general)
+            // Incluimos contexto relevante pero sin datos sensibles
+            this.logger.log(`Iniciando creación de rol: "${datos.nombre}" por usuario ${idUsuarioEjecutor}`);
+
+            const rolCreado = await this.rolDominioService.crearRol({
+                nombre: datos.nombre,
+                descripcion: datos.descripcion,
+                idUsuarioCreacion: idUsuarioEjecutor
+            });
+
+            // Log de éxito con información que ayuda a la trazabilidad
+            this.logger.log(`Rol creado exitosamente: ID ${rolCreado.id}, nombre: "${rolCreado.nombre}"`);
+
+            return new RolRespuestaDto(rolCreado);
+
+        } catch (error) {
+            // Log de error con contexto completo para debugging
+            // Usamos 'error' como nivel para que sea fácil filtrar problemas
+            this.logger.error(
+                `Error al crear rol: ${error.message}`, // Mensaje principal del error
+                {
+                    // Contexto estructurado que ayuda en el debugging
+                    datosEntrada: {
+                        nombre: datos.nombre,
+                        tieneDescripcion: !!datos.descripcion
+                    }, // No logeamos la descripción completa por privacidad
+                    idUsuarioEjecutor,
+                    tipoError: error.constructor.name, // Nos ayuda a identificar el tipo de error
+                }
+            );
+
+            // Re-lanzamos el error para que sea manejado por nuestro filtro global
+            throw error;
+        }
+    }
+}
+
+// ==========================================
+// File: src\rol\aplicacion\casos-uso\eliminar-rol.caso-uso.ts
+// ==========================================
+
+import { Logger } from '@nestjs/common';
+import { RolDominioService, ResultadoEliminacion } from '../../dominio/servicios/rol-dominio.service';
+
+export class RolEliminadoDto {
+    id: number;
+    nombre: string;
+    eliminadoPor: number;
+    fechaEliminacion: string;
+    mensaje: string;
+
+    constructor(resultado: ResultadoEliminacion) {
+        this.id = resultado.id;
+        this.nombre = resultado.nombre;
+        this.eliminadoPor = resultado.eliminadoPor;
+        this.fechaEliminacion = resultado.fechaEliminacion.toISOString();
+        this.mensaje = `El rol "${resultado.nombre}" ha sido eliminado exitosamente`;
+    }
+}
+
+export class EliminarRolCasoUso {
+    private readonly logger = new Logger(EliminarRolCasoUso.name);
+
+    constructor(
+        private readonly rolDominioService: RolDominioService
+    ) { }
+
+    async ejecutar(id: number, idUsuarioEjecutor: number): Promise<RolEliminadoDto> {
+        try {
+            this.logger.log(
+                `Iniciando eliminación (soft delete) de rol ID ${id}`,
+                {
+                    auditoria: {
+                        idRol: id,
+                        idUsuarioEjecutor,
+                        timestamp: new Date().toISOString(),
+                        operacion: 'ELIMINAR_ROL'
+                    }
+                }
+            );
+
+            // El servicio de dominio ahora nos devuelve información sobre lo eliminado
+            const resultadoEliminacion = await this.rolDominioService.eliminarRol(id, idUsuarioEjecutor);
+
+            this.logger.log(
+                `Rol eliminado exitosamente: ID ${resultadoEliminacion.id}, nombre: "${resultadoEliminacion.nombre}"`,
+                {
+                    resultado: {
+                        idRol: resultadoEliminacion.id,
+                        nombreRol: resultadoEliminacion.nombre,
+                        estadoFinal: 'ELIMINADO',
+                        eliminadoPor: resultadoEliminacion.eliminadoPor,
+                        tipoEliminacion: 'SOFT_DELETE',
+                        fechaEliminacion: resultadoEliminacion.fechaEliminacion.toISOString()
+                    }
+                }
+            );
+
+            return new RolEliminadoDto(resultadoEliminacion);
+
+        } catch (error) {
+            this.logger.error(
+                `Error crítico al eliminar rol ID ${id}: ${error.message}`,
+                {
+                    contextoError: {
+                        idRol: id,
+                        idUsuarioEjecutor,
+                        tipoError: error.constructor.name,
+                        momentoFallo: new Date().toISOString(),
+                        operacionFallida: 'ELIMINAR_ROL'
+                    }
+                }
+            );
+            throw error;
+        }
+    }
+}
+
+// ==========================================
+// File: src\rol\aplicacion\casos-uso\listar-roles.caso-uso.ts
+// ==========================================
+
+import { Logger } from '@nestjs/common';
+import { RolRepositorio } from '../../dominio/puertos/repositorios/rol-repositorio.interface';
+import { RolRespuestaDto } from '../dtos/rol-respuesta.dto';
+
+export enum TipoFiltroEstado {
+    ACTIVOS = 'activos',
+    ELIMINADOS = 'eliminados',
+    TODOS = 'todos'
+}
+
+export interface FiltrosListarRoles {
+    estado?: TipoFiltroEstado;
+    nombre?: string;
+    limite?: number;
+    offset?: number;
+}
+
+export interface ResultadoPaginado<T> {
+    datos: T[];
+    total: number;
+    limite: number;
+    offset: number;
+    totalPaginas: number;
+    paginaActual: number;
+    filtrosAplicados: {
+        estado: TipoFiltroEstado;
+        nombre?: string;
+    };
+}
+
+export class ListarRolesCasoUso {
+    private readonly logger = new Logger(ListarRolesCasoUso.name);
+
+    constructor(
+        private readonly rolRepositorio: RolRepositorio
+    ) { }
+
+    async ejecutar(filtros: FiltrosListarRoles = {}): Promise<ResultadoPaginado<RolRespuestaDto>> {
+        try {
+            const limite = filtros.limite || 10;
+            const offset = filtros.offset || 0;
+            const estado = filtros.estado || TipoFiltroEstado.ACTIVOS;
+
+            // Log con información estructurada sobre los filtros aplicados
+            this.logger.log('Listando roles', {
+                filtros: {
+                    estado,
+                    nombre: filtros.nombre || 'sin filtro',
+                    paginacion: { limite, offset }
+                }
+            });
+
+            const filtrosRepositorio = this.convertirFiltrosParaRepositorio(filtros, estado);
+
+            const [roles, total] = await Promise.all([
+                this.rolRepositorio.buscarTodos(filtrosRepositorio),
+                this.rolRepositorio.contarRegistros(this.getFiltrosConteo(estado))
+            ]);
+
+            // Log con métricas útiles sobre los resultados
+            this.logger.log(
+                `Consulta de roles completada: ${roles.length} roles obtenidos de ${total} totales`,
+                {
+                    metricas: {
+                        resultadosEncontrados: roles.length,
+                        totalDisponible: total,
+                        filtroEstado: estado,
+                        tiempoRespuesta: 'rápido' // En una implementación real, podríamos medir tiempo real
+                    }
+                }
+            );
+
+            const rolesDto = roles.map(rol => new RolRespuestaDto(rol));
+            const totalPaginas = Math.ceil(total / limite);
+            const paginaActual = Math.floor(offset / limite) + 1;
+
+            return {
+                datos: rolesDto,
+                total,
+                limite,
+                offset,
+                totalPaginas,
+                paginaActual,
+                filtrosAplicados: {
+                    estado,
+                    nombre: filtros.nombre
+                }
+            };
+
+        } catch (error) {
+            this.logger.error(
+                `Error al listar roles: ${error.message}`,
+                {
+                    filtrosAplicados: filtros,
+                    tipoError: error.constructor.name
+                }
+            );
+            throw error;
+        }
+    }
+
+    private convertirFiltrosParaRepositorio(filtros: FiltrosListarRoles, estado: TipoFiltroEstado): any {
+        const filtrosRepo: any = {
+            limite: filtros.limite,
+            offset: filtros.offset,
+            nombre: filtros.nombre
+        };
+
+        switch (estado) {
+            case TipoFiltroEstado.ACTIVOS:
+                filtrosRepo.activo = true;
+                break;
+            case TipoFiltroEstado.ELIMINADOS:
+                filtrosRepo.activo = false;
+                break;
+            case TipoFiltroEstado.TODOS:
+                break;
+        }
+
+        return filtrosRepo;
+    }
+
+    private getFiltrosConteo(estado: TipoFiltroEstado): any {
+        switch (estado) {
+            case TipoFiltroEstado.ACTIVOS:
+                return { activo: true };
+            case TipoFiltroEstado.ELIMINADOS:
+                return { activo: false };
+            case TipoFiltroEstado.TODOS:
+                return {};
+        }
+    }
+}
+
+// ==========================================
+// File: src\rol\aplicacion\casos-uso\obtener-rol.caso-uso.ts
+// ==========================================
+
+import { Logger } from '@nestjs/common';
+import { RolRepositorio } from '../../dominio/puertos/repositorios/rol-repositorio.interface';
+import { RolRespuestaDto } from '../dtos/rol-respuesta.dto';
+
+export class ObtenerRolCasoUso {
+    private readonly logger = new Logger(ObtenerRolCasoUso.name);
+
+    constructor(
+        private readonly rolRepositorio: RolRepositorio
+    ) { }
+
+    async ejecutar(id: number): Promise<RolRespuestaDto> {
+        try {
+            // Para operaciones de lectura simples, usamos 'debug' en lugar de 'log'
+            // Esto nos permite tener información detallada en desarrollo pero reducir ruido en producción
+            this.logger.debug(`Buscando rol con ID ${id}`);
+
+            const rol = await this.rolRepositorio.buscarPorId(id);
+
+            if (!rol) {
+                // Este es un caso esperado de negocio, no un error técnico
+                this.logger.warn(`Intento de acceso a rol inexistente: ID ${id}`);
+                throw new Error(`No se encontró un rol con ID ${id}`);
+            }
+
+            this.logger.debug(`Rol encontrado: ID ${rol.id}, nombre: "${rol.nombre}", activo: ${rol.activo}`);
+
+            return new RolRespuestaDto(rol);
+
+        } catch (error) {
+            // Solo logeamos como error si es algo inesperado
+            if (error.message.includes('No se encontró')) {
+                // Para errores esperados de negocio, usamos 'warn'
+                this.logger.warn(`Rol no encontrado: ID ${id}`);
+            } else {
+                // Para errores técnicos inesperados, usamos 'error'
+                this.logger.error(`Error técnico al buscar rol ID ${id}: ${error.message}`);
+            }
+            throw error;
+        }
+    }
+}
+
+// ==========================================
+// File: src\rol\aplicacion\casos-uso\restaurar-rol.caso-uso.ts
+// ==========================================
+
+import { Logger } from '@nestjs/common';
+import { RolDominioService } from '../../dominio/servicios/rol-dominio.service';
+import { RolRespuestaDto } from '../dtos/rol-respuesta.dto';
+
+export class RestaurarRolCasoUso {
+    private readonly logger = new Logger(RestaurarRolCasoUso.name);
+
+    constructor(
+        private readonly rolDominioService: RolDominioService
+    ) { }
+
+    async ejecutar(id: number, idUsuarioEjecutor: number): Promise<RolRespuestaDto> {
+        try {
+            // La restauración es una operación especial que merece logging detallado
+            // Nos ayuda a entender patrones: ¿se eliminan roles por error frecuentemente?
+            // ¿Hay usuarios específicos que restauran más que otros?
+            this.logger.log(
+                `Iniciando restauración de rol eliminado: ID ${id}`,
+                {
+                    operacionRestauracion: {
+                        idRol: id,
+                        idUsuarioEjecutor,
+                        timestamp: new Date().toISOString(),
+                        razonOperacion: 'RESTAURAR_ROL_ELIMINADO'
+                    }
+                }
+            );
+
+            // Registramos que estamos validando las condiciones para la restauración
+            this.logger.debug(
+                `Validando condiciones para restauración del rol ID ${id}`,
+                {
+                    validaciones: [
+                        'existencia_rol',
+                        'estado_eliminado',
+                        'conflicto_nombres'
+                    ]
+                }
+            );
+
+            const rolRestaurado = await this.rolDominioService.restaurarRol(id, idUsuarioEjecutor);
+
+            // Log de éxito con información completa del resultado
+            this.logger.log(
+                `Rol restaurado exitosamente: ID ${id}, nombre: "${rolRestaurado.nombre}"`,
+                {
+                    resultadoRestauracion: {
+                        idRol: rolRestaurado.id,
+                        nombreRol: rolRestaurado.nombre,
+                        restauradoPor: idUsuarioEjecutor,
+                        estadoFinal: 'ACTIVO',
+                        fechaRestauracion: new Date().toISOString()
+                    }
+                }
+            );
+
+            return new RolRespuestaDto(rolRestaurado);
+
+        } catch (error) {
+            // Los errores en restauración pueden indicar problemas de datos o conflictos
+            // Es importante capturar esta información para análisis posterior
+            this.logger.error(
+                `Error al restaurar rol ID ${id}: ${error.message}`,
+                {
+                    contextoErrorRestauracion: {
+                        idRol: id,
+                        idUsuarioEjecutor,
+                        tipoError: error.constructor.name,
+                        posiblesCausas: [
+                            'rol_no_existe',
+                            'rol_ya_activo',
+                            'conflicto_nombre',
+                            'error_validacion'
+                        ],
+                        momentoError: new Date().toISOString()
+                    }
+                }
+            );
+            throw error;
+        }
+    }
+}
+
+// ==========================================
+// File: src\rol\aplicacion\dtos\actualizar-rol.dto.ts
+// ==========================================
+
+import { IsNotEmpty, IsString, IsOptional, Length, Matches } from 'class-validator';
+
+export class ActualizarRolDto {
+    @IsOptional()
+    @IsNotEmpty({ message: 'El nombre del rol no puede estar vacío' })
+    @IsString({ message: 'El nombre debe ser una cadena de texto' })
+    @Length(2, 50, { message: 'El nombre debe tener entre 2 y 50 caracteres' })
+    @Matches(/^[a-zA-ZáéíóúÁÉÍÓÚñÑ\s\-_]+$/, {
+        message: 'El nombre solo puede contener letras, espacios, guiones y guiones bajos'
+    })
+    nombre?: string;
+
+    @IsOptional()
+    @IsString({ message: 'La descripción debe ser una cadena de texto' })
+    @Length(0, 200, { message: 'La descripción no puede exceder 200 caracteres' })
+    descripcion?: string;
+}
+
+// ==========================================
+// File: src\rol\aplicacion\dtos\crear-rol.dto.ts
+// ==========================================
+
+import { IsNotEmpty, IsString, IsOptional, Length, Matches } from 'class-validator';
+
+export class CrearRolDto {
+    @IsNotEmpty({ message: 'El nombre del rol es requerido' })
+    @IsString({ message: 'El nombre debe ser una cadena de texto' })
+    @Length(2, 50, { message: 'El nombre debe tener entre 2 y 50 caracteres' })
+    @Matches(/^[a-zA-ZáéíóúÁÉÍÓÚñÑ\s\-_]+$/, {
+        message: 'El nombre solo puede contener letras, espacios, guiones y guiones bajos'
+    })
+    nombre: string;
+
+    @IsOptional()
+    @IsString({ message: 'La descripción debe ser una cadena de texto' })
+    @Length(0, 200, { message: 'La descripción no puede exceder 200 caracteres' })
+    descripcion?: string;
+}
+
+// ==========================================
+// File: src\rol\aplicacion\dtos\rol-respuesta.dto.ts
+// ==========================================
+
+export class RolRespuestaDto {
+    id: number;
+    nombre: string;
+    descripcion: string | null;
+    fechaCreacion: string; // Usamos string para tener control total sobre el formato de fecha
+    idUsuarioCreacion: number | null;
+    fechaModificacion: string | null;
+    idUsuarioModificacion: number | null;
+    activo: boolean;
+
+    constructor(rol: any) {
+        this.id = rol.id;
+        this.nombre = rol.nombre;
+        this.descripcion = rol.descripcion;
+        // Formateamos las fechas de manera consistente
+        this.fechaCreacion = rol.fechaCreacion.toISOString();
+        this.idUsuarioCreacion = rol.idUsuarioCreacion;
+        this.fechaModificacion = rol.fechaModificacion?.toISOString() || null;
+        this.idUsuarioModificacion = rol.idUsuarioModificacion;
+        this.activo = rol.activo;
+    }
+}
+
+// ==========================================
+// File: src\rol\dominio\entidades\rol.entity.ts
+// ==========================================
+
+export class Rol {
+    private _id: number | undefined;
+    private _nombre: string;
+    private _descripcion: string | null;
+    private _fechaCreacion: Date;
+    private _idUsuarioCreacion: number | null;
+    private _fechaModificacion: Date | null;
+    private _idUsuarioModificacion: number | null;
+    private _activo: boolean;
+
+    constructor(params: {
+        id?: number;
+        nombre: string;
+        descripcion?: string | null;
+        fechaCreacion?: Date;
+        idUsuarioCreacion?: number | null;
+        fechaModificacion?: Date | null;
+        idUsuarioModificacion?: number | null;
+        activo?: boolean;
+    }) {
+        this.validarNombre(params.nombre);
+
+        this._id = params.id;
+        this._nombre = params.nombre.trim();
+        this._descripcion = params.descripcion?.trim() || null;
+        this._fechaCreacion = params.fechaCreacion || new Date();
+        this._idUsuarioCreacion = params.idUsuarioCreacion || null;
+        this._fechaModificacion = params.fechaModificacion || null;
+        this._idUsuarioModificacion = params.idUsuarioModificacion || null;
+        this._activo = params.activo !== undefined ? params.activo : true;
+    }
+
+    // Getters (sin cambios)
+    get id(): number {
+        if (this._id === undefined) {
+            throw new Error('El rol no ha sido persistido aún');
+        }
+        return this._id;
+    }
+
+    get nombre(): string { return this._nombre; }
+    get descripcion(): string | null { return this._descripcion; }
+    get fechaCreacion(): Date { return this._fechaCreacion; }
+    get idUsuarioCreacion(): number | null { return this._idUsuarioCreacion; }
+    get fechaModificacion(): Date | null { return this._fechaModificacion; }
+    get idUsuarioModificacion(): number | null { return this._idUsuarioModificacion; }
+    get activo(): boolean { return this._activo; }
+
+    // Métodos de negocio corregidos
+    actualizar(datos: {
+        nombre?: string;
+        descripcion?: string;
+        idUsuarioModificacion: number;
+    }): void {
+        let huboCambios = false; // Variable con nombre consistente
+
+        if (datos.nombre && datos.nombre !== this._nombre) {
+            this.validarNombre(datos.nombre);
+            this._nombre = datos.nombre.trim();
+            huboCambios = true;
+        }
+
+        if (datos.descripcion !== undefined && datos.descripcion !== this._descripcion) {
+            this._descripcion = datos.descripcion?.trim() || null;
+            huboCambios = true; // Nombre corregido para consistencia
+        }
+
+        if (huboCambios) {
+            this._fechaModificacion = new Date();
+            this._idUsuarioModificacion = datos.idUsuarioModificacion;
+        }
+    }
+
+    desactivar(idUsuarioModificacion: number): void {
+        if (!this._activo) {
+            throw new Error('El rol ya está desactivado');
+        }
+        this._activo = false;
+        this._fechaModificacion = new Date();
+        this._idUsuarioModificacion = idUsuarioModificacion;
+    }
+
+    activar(idUsuarioModificacion: number): void {
+        if (this._activo) {
+            throw new Error('El rol ya está activo');
+        }
+        this._activo = true;
+        this._fechaModificacion = new Date();
+        this._idUsuarioModificacion = idUsuarioModificacion;
+    }
+
+    private validarNombre(nombre: string): void {
+        if (!nombre || nombre.trim().length === 0) {
+            throw new Error('El nombre del rol es requerido');
+        }
+        if (nombre.trim().length < 2) {
+            throw new Error('El nombre del rol debe tener al menos 2 caracteres');
+        }
+        if (nombre.trim().length > 50) {
+            throw new Error('El nombre del rol no puede exceder 50 caracteres');
+        }
+        const caracteresPermitidos = /^[a-zA-ZáéíóúÁÉÍÓÚñÑ\s\-_]+$/;
+        if (!caracteresPermitidos.test(nombre.trim())) {
+            throw new Error('El nombre del rol contiene caracteres no permitidos');
+        }
+    }
+
+    puedeSerModificado(): boolean {
+        return this._activo;
+    }
+
+    toString(): string {
+        return `Rol[id=${this._id}, nombre=${this._nombre}, activo=${this._activo}]`;
+    }
+}
+
+// ==========================================
+// File: src\rol\dominio\excepciones\rol-domain.exception.ts
+// ==========================================
+
+// Clase base para todas las excepciones de dominio relacionadas con roles
+export abstract class RolDomainException extends Error {
+    constructor(message: string) {
+        super(message);
+        this.name = this.constructor.name;
+    }
+}
+
+// Excepción para cuando se intenta crear un rol con un nombre que ya existe
+export class RolNombreDuplicadoException extends RolDomainException {
+    constructor(nombre: string) {
+        super(`Ya existe un rol con el nombre "${nombre}"`);
+    }
+}
+
+// Excepción para cuando se busca un rol que no existe
+export class RolNoEncontradoException extends RolDomainException {
+    constructor(id: number) {
+        super(`No se encontró un rol con ID ${id}`);
+    }
+}
+
+// Excepción para cuando se intenta operar sobre un rol inactivo
+export class RolInactivoException extends RolDomainException {
+    constructor(id: number) {
+        super(`El rol con ID ${id} está inactivo y no puede ser modificado`);
+    }
+}
+
+// Excepción para cuando se intenta eliminar un rol que tiene dependencias
+export class RolConDependenciasException extends RolDomainException {
+    constructor(id: number, dependencias: string[]) {
+        super(`No se puede eliminar el rol con ID ${id} porque tiene dependencias en: ${dependencias.join(', ')}`);
+    }
+}
+
+// Excepción para validaciones de datos de entrada
+export class RolDatosInvalidosException extends RolDomainException {
+    constructor(mensaje: string) {
+        super(mensaje);
+    }
+}
+
+// ==========================================
+// File: src\rol\dominio\puertos\repositorios\rol-repositorio.interface.ts
+// ==========================================
+
+import { Rol } from '../../entidades/rol.entity';
+
+// Esta interfaz define QUÉ necesita nuestro dominio, no CÓMO se implementa
+export interface RolRepositorio {
+    // Operaciones básicas CRUD
+    guardar(rol: Rol): Promise<Rol>;
+    buscarPorId(id: number): Promise<Rol | null>;
+    buscarTodos(filtros?: {
+        activo?: boolean;
+        nombre?: string;
+        limite?: number;
+        offset?: number;
+    }): Promise<Rol[]>;
+    eliminar(id: number, idUsuarioEjecutor: number): Promise<void>;
+    restaurar(id: number, idUsuarioEjecutor: number): Promise<void>;
+
+    // Validaciones específicas que mencionaste
+    existeConNombre(nombre: string, idExcluir?: number): Promise<boolean>;
+    existeYEstaActivo(id: number): Promise<boolean>;
+    puedeSerEliminado(id: number): Promise<{
+        puedeEliminarse: boolean;
+        razon?: string;
+        dependencias?: string[];
+    }>;
+    contarRegistros(filtros?: { activo?: boolean }): Promise<number>;
+}
+
+// ==========================================
+// File: src\rol\dominio\servicios\rol-dominio.service.ts
+// ==========================================
+
+import { Rol } from '../entidades/rol.entity';
+import { RolRepositorio } from '../puertos/repositorios/rol-repositorio.interface';
+import {
+    RolNombreDuplicadoException,
+    RolNoEncontradoException,
+    RolInactivoException,
+    RolConDependenciasException,
+    RolDatosInvalidosException
+} from '../excepciones/rol-domain.exception';
+
+export interface ResultadoEliminacion {
+    id: number;
+    nombre: string;
+    fechaEliminacion: Date;
+    eliminadoPor: number;
+}
+
+export class RolDominioService {
+    constructor(private readonly rolRepositorio: RolRepositorio) { }
+
+    async validarNombreUnico(nombre: string, idExcluir?: number): Promise<void> {
+        const existeNombre = await this.rolRepositorio.existeConNombre(nombre, idExcluir);
+        if (existeNombre) {
+            throw new RolNombreDuplicadoException(nombre);
+        }
+    }
+
+    async validarExistenciaYEstadoActivo(id: number): Promise<Rol> {
+        const rol = await this.rolRepositorio.buscarPorId(id);
+        if (!rol) {
+            throw new RolNoEncontradoException(id);
+        }
+
+        if (!rol.activo) {
+            throw new RolInactivoException(id);
+        }
+
+        return rol;
+    }
+
+    async validarPuedeSerEliminado(id: number): Promise<void> {
+        const resultadoValidacion = await this.rolRepositorio.puedeSerEliminado(id);
+
+        if (!resultadoValidacion.puedeEliminarse) {
+            throw new RolConDependenciasException(id, resultadoValidacion.dependencias || []);
+        }
+    }
+
+    async crearRol(datos: {
+        nombre: string;
+        descripcion?: string;
+        idUsuarioCreacion: number;
+    }): Promise<Rol> {
+        await this.validarNombreUnico(datos.nombre);
+
+        const nuevoRol = new Rol({
+            nombre: datos.nombre,
+            descripcion: datos.descripcion,
+            idUsuarioCreacion: datos.idUsuarioCreacion,
+        });
+
+        return await this.rolRepositorio.guardar(nuevoRol);
+    }
+
+    async actualizarRol(id: number, datos: {
+        nombre?: string;
+        descripcion?: string;
+        idUsuarioModificacion: number;
+    }): Promise<Rol> {
+        const rol = await this.validarExistenciaYEstadoActivo(id);
+
+        if (datos.nombre && datos.nombre !== rol.nombre) {
+            await this.validarNombreUnico(datos.nombre, id);
+        }
+
+        rol.actualizar(datos);
+        return await this.rolRepositorio.guardar(rol);
+    }
+
+    async eliminarRol(id: number, idUsuarioEjecutor: number): Promise<ResultadoEliminacion> {
+        // Primero obtenemos y validamos el rol
+        const rol = await this.validarExistenciaYEstadoActivo(id);
+
+        // Guardamos la información que necesitaremos para la respuesta
+        const informacionRol = {
+            id: rol.id,
+            nombre: rol.nombre
+        };
+
+        // Validamos que puede ser eliminado
+        await this.validarPuedeSerEliminado(id);
+
+        // Ejecutamos la eliminación
+        await this.rolRepositorio.eliminar(id, idUsuarioEjecutor);
+
+        // Devolvemos información estructurada sobre lo que se eliminó
+        return {
+            id: informacionRol.id,
+            nombre: informacionRol.nombre,
+            fechaEliminacion: new Date(),
+            eliminadoPor: idUsuarioEjecutor
+        };
+    }
+
+    // Nueva funcionalidad: restaurar rol eliminado
+    async restaurarRol(id: number, idUsuarioEjecutor: number): Promise<Rol> {
+        const rol = await this.rolRepositorio.buscarPorId(id);
+        if (!rol) {
+            throw new RolNoEncontradoException(id);
+        }
+
+        if (rol.activo) {
+            throw new RolDatosInvalidosException(`El rol con ID ${id} ya está activo`);
+        }
+
+        // Verificamos que no haya conflicto de nombres al restaurar
+        await this.validarNombreUnico(rol.nombre, id);
+
+        await this.rolRepositorio.restaurar(id, idUsuarioEjecutor);
+
+        // Retornamos el rol actualizado
+        const rolRestaurado = await this.rolRepositorio.buscarPorId(id);
+        return rolRestaurado!;
+    }
+}
+
+// ==========================================
+// File: src\rol\infraestructura\adaptadores\entrada\controladores\rol.controller.ts
+// ==========================================
+
+import {
+    Controller,
+    Get,
+    Post,
+    Put,
+    Delete,
+    Patch,
+    Body,
+    Param,
+    Query,
+    ParseIntPipe,
+    HttpStatus,
+    HttpCode,
+} from '@nestjs/common';
+import { CrearRolCasoUso } from '../../../../aplicacion/casos-uso/crear-rol.caso-uso';
+import { ActualizarRolCasoUso } from '../../../../aplicacion/casos-uso/actualizar-rol.caso-uso';
+import { ObtenerRolCasoUso } from '../../../../aplicacion/casos-uso/obtener-rol.caso-uso';
+import { ListarRolesCasoUso, FiltrosListarRoles, TipoFiltroEstado } from '../../../../aplicacion/casos-uso/listar-roles.caso-uso';
+import { EliminarRolCasoUso } from '../../../../aplicacion/casos-uso/eliminar-rol.caso-uso';
+import { RestaurarRolCasoUso } from '../../../../aplicacion/casos-uso/restaurar-rol.caso-uso';
+import { CrearRolDto } from '../../../../aplicacion/dtos/crear-rol.dto';
+import { ActualizarRolDto } from '../../../../aplicacion/dtos/actualizar-rol.dto';
+
+@Controller('roles')
+export class RolController {
+    constructor(
+        private readonly crearRolCasoUso: CrearRolCasoUso,
+        private readonly actualizarRolCasoUso: ActualizarRolCasoUso,
+        private readonly obtenerRolCasoUso: ObtenerRolCasoUso,
+        private readonly listarRolesCasoUso: ListarRolesCasoUso,
+        private readonly eliminarRolCasoUso: EliminarRolCasoUso,
+        private readonly restaurarRolCasoUso: RestaurarRolCasoUso, // Nueva dependencia
+    ) { }
+
+    @Post()
+    @HttpCode(HttpStatus.CREATED)
+    async crear(@Body() crearRolDto: CrearRolDto) {
+        const idUsuarioEjecutor = 1;
+        return await this.crearRolCasoUso.ejecutar(crearRolDto, idUsuarioEjecutor);
+    }
+
+    /**
+     * GET /roles
+     * Lista roles con filtros mejorados y paginación.
+     * 
+     * Ejemplos de uso mejorados:
+     * - GET /roles (solo roles activos, comportamiento por defecto)
+     * - GET /roles?estado=activos (explícitamente solo activos)
+     * - GET /roles?estado=eliminados (solo roles eliminados/inactivos)
+     * - GET /roles?estado=todos (todos los roles sin importar estado)
+     * - GET /roles?estado=activos&nombre=admin (buscar "admin" solo en activos)
+     * - GET /roles?limite=5&offset=10&estado=todos (paginación con todos los estados)
+     */
+    @Get()
+    async listar(
+        @Query('estado') estado?: string,
+        @Query('nombre') nombre?: string,
+        @Query('limite') limite?: string,
+        @Query('offset') offset?: string,
+    ) {
+        const filtros: FiltrosListarRoles = {};
+
+        // Validamos y convertimos el parámetro de estado
+        if (estado) {
+            // Verificamos que el estado solicitado sea válido
+            const estadosValidos = Object.values(TipoFiltroEstado);
+            if (estadosValidos.includes(estado as TipoFiltroEstado)) {
+                filtros.estado = estado as TipoFiltroEstado;
+            } else {
+                // Si el estado no es válido, lanzamos un error específico explicando las opciones
+                throw new Error(`Estado '${estado}' no válido. Estados permitidos: ${estadosValidos.join(', ')}`);
+            }
+        }
+        // Si no se especifica estado, el caso de uso usará 'activos' por defecto
+
+        if (nombre) {
+            filtros.nombre = nombre;
+        }
+
+        // Validamos y convertimos los parámetros numéricos con límites razonables
+        if (limite) {
+            const limiteNum = parseInt(limite, 10);
+            if (!isNaN(limiteNum) && limiteNum > 0 && limiteNum <= 100) {
+                filtros.limite = limiteNum;
+            } else {
+                throw new Error('El límite debe ser un número entre 1 y 100');
+            }
+        }
+
+        if (offset) {
+            const offsetNum = parseInt(offset, 10);
+            if (!isNaN(offsetNum) && offsetNum >= 0) {
+                filtros.offset = offsetNum;
+            } else {
+                throw new Error('El offset debe ser un número mayor o igual a 0');
+            }
+        }
+
+        return await this.listarRolesCasoUso.ejecutar(filtros);
+    }
+
+    @Get(':id')
+    async obtenerPorId(@Param('id', ParseIntPipe) id: number) {
+        return await this.obtenerRolCasoUso.ejecutar(id);
+    }
+
+    @Put(':id')
+    async actualizar(
+        @Param('id', ParseIntPipe) id: number,
+        @Body() actualizarRolDto: ActualizarRolDto,
+    ) {
+        const idUsuarioEjecutor = 1;
+        return await this.actualizarRolCasoUso.ejecutar(id, actualizarRolDto, idUsuarioEjecutor);
+    }
+
+    @Delete(':id')
+    // Removemos el @HttpCode(HttpStatus.NO_CONTENT) para usar el 200 por defecto
+    async eliminar(@Param('id', ParseIntPipe) id: number) {
+        const idUsuarioEjecutor = 1;
+
+        // Ahora devolvemos la respuesta estructurada en lugar de void
+        return await this.eliminarRolCasoUso.ejecutar(id, idUsuarioEjecutor);
+    }
+
+    /**
+     * PATCH /roles/:id/restaurar
+     * Restaura un rol eliminado (soft delete) volviéndolo al estado activo.
+     * 
+     * Usamos PATCH porque estamos modificando parcialmente el estado del recurso.
+     * Usamos una ruta específica (/restaurar) para que sea clara la intención.
+     * 
+     * Ejemplo: PATCH /roles/5/restaurar
+     */
+    @Patch(':id/restaurar')
+    async restaurar(@Param('id', ParseIntPipe) id: number) {
+        const idUsuarioEjecutor = 1;
+        return await this.restaurarRolCasoUso.ejecutar(id, idUsuarioEjecutor);
+    }
+}
+
+// ==========================================
+// File: src\rol\infraestructura\adaptadores\salida\repositorios\mappers\rol.mapper.ts
+// ==========================================
+
+import { Rol } from '../../../../../dominio/entidades/rol.entity';
+import { RolOrmEntity } from '../typeorm/entidades/rol.orm-entity';
+
+export class RolMapper {
+    /**
+     * Convierte una entidad ORM de TypeORM a una entidad de dominio pura.
+     * Este proceso es como traducir de "lenguaje de base de datos" a "lenguaje de negocio".
+     */
+    static toDomain(ormEntity: RolOrmEntity): Rol {
+        return new Rol({
+            id: ormEntity.id,
+            nombre: ormEntity.nombre,
+            descripcion: ormEntity.descripcion,
+            fechaCreacion: ormEntity.fechaCreacion,
+            idUsuarioCreacion: ormEntity.idUsuarioCreacion,
+            fechaModificacion: ormEntity.fechaModificacion,
+            idUsuarioModificacion: ormEntity.idUsuarioModificacion,
+            activo: ormEntity.activo,
+        });
+    }
+
+    /**
+     * Convierte una entidad de dominio a una entidad ORM de TypeORM.
+     * Este proceso prepara nuestros datos de negocio para ser persistidos.
+     */
+    static toOrm(domainEntity: Rol): RolOrmEntity {
+        const ormEntity = new RolOrmEntity();
+
+        // Solo asignamos el ID si la entidad ya fue persistida
+        // Esto permite que TypeORM determine si debe hacer INSERT o UPDATE
+        try {
+            ormEntity.id = domainEntity.id;
+        } catch (error) {
+            // Si la entidad no tiene ID, TypeORM hará un INSERT
+            // Si tiene ID, TypeORM hará un UPDATE
+        }
+
+        ormEntity.nombre = domainEntity.nombre;
+        ormEntity.descripcion = domainEntity.descripcion;
+        ormEntity.fechaCreacion = domainEntity.fechaCreacion;
+        ormEntity.idUsuarioCreacion = domainEntity.idUsuarioCreacion;
+        ormEntity.fechaModificacion = domainEntity.fechaModificacion;
+        ormEntity.idUsuarioModificacion = domainEntity.idUsuarioModificacion;
+        ormEntity.activo = domainEntity.activo;
+
+        return ormEntity;
+    }
+
+    /**
+     * Convierte un array de entidades ORM a un array de entidades de dominio.
+     * Útil para operaciones de listado que devuelven múltiples registros.
+     */
+    static toDomainArray(ormEntities: RolOrmEntity[]): Rol[] {
+        return ormEntities.map(ormEntity => this.toDomain(ormEntity));
+    }
+}
+
+// ==========================================
+// File: src\rol\infraestructura\adaptadores\salida\repositorios\typeorm\entidades\rol.orm-entity.ts
+// ==========================================
+
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn } from 'typeorm';
+
+@Entity('rol') // Este decorador le dice a TypeORM que esta clase representa la tabla 'rol'
+export class RolOrmEntity {
+    @PrimaryGeneratedColumn({ name: 'id' })
+    id: number;
+
+    @Column({ name: 'nombre', type: 'varchar', length: 50, nullable: false })
+    nombre: string;
+
+    @Column({ name: 'descripcion', type: 'varchar', length: 200, nullable: true })
+    descripcion: string | null;
+
+    // TypeORM puede manejar automáticamente las fechas de creación y modificación
+    @CreateDateColumn({ name: 'fecha_creacion', type: 'timestamp' })
+    fechaCreacion: Date;
+
+    @Column({ name: 'id_usuario_creacion', type: 'int', nullable: true })
+    idUsuarioCreacion: number | null;
+
+    @UpdateDateColumn({ name: 'fecha_modificacion', type: 'timestamp', nullable: true })
+    fechaModificacion: Date | null;
+
+    @Column({ name: 'id_usuario_modificacion', type: 'int', nullable: true })
+    idUsuarioModificacion: number | null;
+
+    @Column({ name: 'activo', type: 'boolean', default: true })
+    activo: boolean;
+}
+
+// ==========================================
+// File: src\rol\infraestructura\adaptadores\salida\repositorios\typeorm\rol.repository.ts
+// ==========================================
+
+import { Injectable } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository, Like, IsNull, Not } from 'typeorm';
+import { RolRepositorio } from '../../../../../dominio/puertos/repositorios/rol-repositorio.interface';
+import { Rol } from '../../../../../dominio/entidades/rol.entity';
+import { RolOrmEntity } from './entidades/rol.orm-entity';
+import { RolMapper } from '../mappers/rol.mapper';
+
+@Injectable() // Este decorador permite que NestJS inyecte dependencias automáticamente
+export class TypeOrmRolRepository implements RolRepositorio {
+    constructor(
+        @InjectRepository(RolOrmEntity)
+        private readonly rolRepository: Repository<RolOrmEntity>,
+    ) { }
+
+    async guardar(rol: Rol): Promise<Rol> {
+        try {
+            // Convertimos la entidad de dominio a entidad ORM
+            const rolOrm = RolMapper.toOrm(rol);
+
+            // TypeORM determina automáticamente si debe hacer INSERT o UPDATE
+            const rolGuardado = await this.rolRepository.save(rolOrm);
+
+            // Convertimos el resultado de vuelta a entidad de dominio
+            return RolMapper.toDomain(rolGuardado);
+        } catch (error) {
+            // Transformamos errores de base de datos a errores de dominio más comprensibles
+            if (error.code === '23505') { // Código de PostgreSQL para violación de restricción única
+                throw new Error(`Ya existe un rol con el nombre especificado`);
+            }
+            throw new Error(`Error al guardar el rol: ${error.message}`);
+        }
+    }
+
+    async buscarPorId(id: number): Promise<Rol | null> {
+        const rolOrm = await this.rolRepository.findOne({
+            where: { id }
+        });
+
+        return rolOrm ? RolMapper.toDomain(rolOrm) : null;
+    }
+
+    async buscarTodos(filtros: {
+        activo?: boolean;
+        nombre?: string;
+        limite?: number;
+        offset?: number;
+    } = {}): Promise<Rol[]> {
+        // Construimos dinámicamente las condiciones de búsqueda
+        const whereConditions: any = {};
+
+        if (filtros.activo !== undefined) {
+            whereConditions.activo = filtros.activo;
+        }
+
+        if (filtros.nombre) {
+            // Búsqueda parcial insensible a mayúsculas/minúsculas
+            whereConditions.nombre = Like(`%${filtros.nombre}%`);
+        }
+
+        const rolesOrm = await this.rolRepository.find({
+            where: whereConditions,
+            take: filtros.limite || 10, // Limitamos resultados para evitar problemas de rendimiento
+            skip: filtros.offset || 0,
+            order: {
+                nombre: 'ASC', // Ordenamos alfabéticamente por defecto
+            },
+        });
+
+        return RolMapper.toDomainArray(rolesOrm);
+    }
+
+    async eliminar(id: number, idUsuarioEjecutor: number): Promise<void> {
+        // Implementamos soft delete actualizando el campo 'activo'
+        // Esto preserva los datos para auditoría mientras los marca como eliminados
+        const resultado = await this.rolRepository.update(id, {
+            activo: false,
+            fechaModificacion: new Date(),
+            idUsuarioModificacion: idUsuarioEjecutor,
+        });
+
+        if (resultado.affected === 0) {
+            throw new Error(`No se pudo eliminar el rol con ID ${id}. Puede que no exista.`);
+        }
+    }
+
+    async restaurar(id: number, idUsuarioEjecutor: number): Promise<void> {
+        // Implementamos la restauración de un rol eliminado
+        const resultado = await this.rolRepository.update(id, {
+            activo: true,
+            fechaModificacion: new Date(),
+            idUsuarioModificacion: idUsuarioEjecutor,
+        });
+
+        if (resultado.affected === 0) {
+            throw new Error(`No se pudo restaurar el rol con ID ${id}. Puede que no exista.`);
+        }
+    }
+
+    // Implementación de las validaciones centralizadas que mencionaste anteriormente
+    async existeConNombre(nombre: string, idExcluir?: number): Promise<boolean> {
+        const whereConditions: any = {
+            nombre: nombre.trim(),
+            activo: true, // Solo consideramos roles activos para validación de unicidad
+        };
+
+        // Si estamos actualizando un rol, excluimos su propio ID de la búsqueda
+        if (idExcluir) {
+            whereConditions.id = Not(idExcluir);
+        }
+
+        const count = await this.rolRepository.count({
+            where: whereConditions
+        });
+
+        return count > 0;
+    }
+
+    async existeYEstaActivo(id: number): Promise<boolean> {
+        const count = await this.rolRepository.count({
+            where: {
+                id,
+                activo: true
+            }
+        });
+
+        return count > 0;
+    }
+
+    async puedeSerEliminado(id: number): Promise<{
+        puedeEliminarse: boolean;
+        razon?: string;
+        dependencias?: string[];
+    }> {
+        // Aquí implementaríamos las validaciones de dependencias
+        // Por ahora, permitimos eliminar cualquier rol, pero en una implementación real
+        // verificaríamos si hay usuarios asignados a este rol, permisos específicos, etc.
+
+        // Ejemplo de cómo se vería una validación real:
+        // const usuariosConEsteRol = await this.usuarioRepository.count({
+        //   where: { idRol: id, activo: true }
+        // });
+
+        // if (usuariosConEsteRol > 0) {
+        //   return {
+        //     puedeEliminarse: false,
+        //     razon: `Existen ${usuariosConEsteRol} usuarios asignados a este rol`,
+        //     dependencias: ['usuarios']
+        //   };
+        // }
+
+        return {
+            puedeEliminarse: true
+        };
+    }
+
+    async contarRegistros(filtros: { activo?: boolean } = {}): Promise<number> {
+        const whereConditions: any = {};
+
+        if (filtros.activo !== undefined) {
+            whereConditions.activo = filtros.activo;
+        }
+
+        return await this.rolRepository.count({
+            where: whereConditions
+        });
+    }
+}
+
+// ==========================================
+// File: src\rol\infraestructura\config\rol.module.ts
+// ==========================================
+
+import { Module } from '@nestjs/common';
+import { TypeOrmModule } from '@nestjs/typeorm';
+
+// Importamos las entidades ORM para que TypeORM las reconozca
+import { RolOrmEntity } from '../adaptadores/salida/repositorios/typeorm/entidades/rol.orm-entity';
+
+// Importamos el controlador que expondrá los endpoints
+import { RolController } from '../adaptadores/entrada/controladores/rol.controller';
+
+// Importamos la implementación del repositorio
+import { TypeOrmRolRepository } from '../adaptadores/salida/repositorios/typeorm/rol.repository';
+
+// Importamos el servicio de dominio
+import { RolDominioService } from '../../dominio/servicios/rol-dominio.service';
+
+// Importamos todos los casos de uso
+import { CrearRolCasoUso } from '../../aplicacion/casos-uso/crear-rol.caso-uso';
+import { ActualizarRolCasoUso } from '../../aplicacion/casos-uso/actualizar-rol.caso-uso';
+import { ObtenerRolCasoUso } from '../../aplicacion/casos-uso/obtener-rol.caso-uso';
+import { ListarRolesCasoUso } from '../../aplicacion/casos-uso/listar-roles.caso-uso';
+import { EliminarRolCasoUso } from '../../aplicacion/casos-uso/eliminar-rol.caso-uso';
+import { RestaurarRolCasoUso } from 'src/rol/aplicacion/casos-uso/restaurar-rol.caso-uso';
+
+@Module({
+    // Registramos las entidades ORM para que TypeORM pueda trabajar con ellas
+    imports: [
+        TypeOrmModule.forFeature([RolOrmEntity])
+    ],
+
+    // Declaramos qué controladores expondrá este módulo
+    controllers: [
+        RolController
+    ],
+
+    // Aquí es donde ocurre la magia de la inyección de dependencias
+    providers: [
+        // Registramos la implementación concreta del repositorio
+        // usando el patrón de token personalizado para mantener la abstracción
+        {
+            provide: 'RolRepositorio', // Token que usaremos para inyectar
+            useClass: TypeOrmRolRepository, // Implementación concreta
+        },
+
+        // Registramos el servicio de dominio con su dependencia del repositorio
+        {
+            provide: RolDominioService,
+            useFactory: (rolRepositorio) => {
+                return new RolDominioService(rolRepositorio);
+            },
+            inject: ['RolRepositorio'], // Inyectamos el repositorio usando el token
+        },
+
+        // Registramos todos los casos de uso con sus respectivas dependencias
+        {
+            provide: CrearRolCasoUso,
+            useFactory: (rolDominioService) => {
+                return new CrearRolCasoUso(rolDominioService);
+            },
+            inject: [RolDominioService],
+        },
+
+        {
+            provide: ActualizarRolCasoUso,
+            useFactory: (rolDominioService) => {
+                return new ActualizarRolCasoUso(rolDominioService);
+            },
+            inject: [RolDominioService],
+        },
+
+        {
+            provide: ObtenerRolCasoUso,
+            useFactory: (rolRepositorio) => {
+                // Este caso de uso accede directamente al repositorio para operaciones simples
+                return new ObtenerRolCasoUso(rolRepositorio);
+            },
+            inject: ['RolRepositorio'],
+        },
+
+        {
+            provide: ListarRolesCasoUso,
+            useFactory: (rolRepositorio) => {
+                return new ListarRolesCasoUso(rolRepositorio);
+            },
+            inject: ['RolRepositorio'],
+        },
+
+        {
+            provide: EliminarRolCasoUso,
+            useFactory: (rolDominioService) => {
+                return new EliminarRolCasoUso(rolDominioService);
+            },
+            inject: [RolDominioService],
+        },
+
+        {
+            provide: RestaurarRolCasoUso,
+            useFactory: (rolDominioService) => {
+                return new RestaurarRolCasoUso(rolDominioService);
+            },
+            inject: [RolDominioService],
+        },
+    ],
+
+    // Exportamos servicios que otros módulos podrían necesitar
+    exports: [
+        'RolRepositorio',
+        RolDominioService,
+    ],
+})
+export class RolModule { }

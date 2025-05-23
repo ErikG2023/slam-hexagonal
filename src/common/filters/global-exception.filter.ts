@@ -15,6 +15,15 @@ import {
     RolConDependenciasException,
     RolDatosInvalidosException
 } from '../../rol/dominio/excepciones/rol-domain.exception';
+import {
+    PermisoDomainException,
+    PermisoNombreDuplicadoException,
+    PermisoCodigoDuplicadoException,
+    PermisoNoEncontradoException,
+    PermisoInactivoException,
+    PermisoConDependenciasException,
+    PermisoDatosInvalidosException
+} from '../../permiso/dominio/excepciones/permiso-domain.exception';
 
 @Catch() // Captura TODAS las excepciones, pero las maneja inteligentemente
 export class GlobalExceptionFilter implements ExceptionFilter {
@@ -51,7 +60,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     } {
         // PASO 1: Verificamos si es una excepción de dominio (errores de negocio)
         if (this.isDomainException(exception)) {
-            return this.handleDomainException(exception as RolDomainException);
+            return this.handleDomainException(exception as RolDomainException | PermisoDomainException);
         }
 
         // PASO 2: Verificamos si es una HttpException de NestJS (errores controlados)
@@ -76,19 +85,18 @@ export class GlobalExceptionFilter implements ExceptionFilter {
 
     // Método que verifica si una excepción es de dominio
     private isDomainException(exception: unknown): boolean {
-        // Verificamos tanto por instanceof como por el nombre de la clase
-        // Esto es importante porque a veces los imports pueden causar problemas con instanceof
         return exception instanceof RolDomainException ||
+            exception instanceof PermisoDomainException ||
             (exception instanceof Error && exception.constructor.name.includes('DomainException'));
     }
 
     // Método especializado para manejar excepciones de dominio
-    private handleDomainException(exception: RolDomainException): {
+    private handleDomainException(exception: RolDomainException | PermisoDomainException): {
         status: number;
         message: string;
         errorCode: string;
     } {
-        // Mapeamos cada tipo específico de excepción de dominio
+        // Excepciones de ROL
         if (exception instanceof RolNombreDuplicadoException) {
             return {
                 status: HttpStatus.CONFLICT,
@@ -96,7 +104,6 @@ export class GlobalExceptionFilter implements ExceptionFilter {
                 errorCode: 'ROL_NOMBRE_DUPLICADO',
             };
         }
-
         if (exception instanceof RolNoEncontradoException) {
             return {
                 status: HttpStatus.NOT_FOUND,
@@ -104,7 +111,6 @@ export class GlobalExceptionFilter implements ExceptionFilter {
                 errorCode: 'ROL_NO_ENCONTRADO',
             };
         }
-
         if (exception instanceof RolInactivoException) {
             return {
                 status: HttpStatus.FORBIDDEN,
@@ -112,7 +118,6 @@ export class GlobalExceptionFilter implements ExceptionFilter {
                 errorCode: 'ROL_INACTIVO',
             };
         }
-
         if (exception instanceof RolConDependenciasException) {
             return {
                 status: HttpStatus.CONFLICT,
@@ -120,12 +125,55 @@ export class GlobalExceptionFilter implements ExceptionFilter {
                 errorCode: 'ROL_CON_DEPENDENCIAS',
             };
         }
-
         if (exception instanceof RolDatosInvalidosException) {
             return {
                 status: HttpStatus.BAD_REQUEST,
                 message: exception.message,
                 errorCode: 'ROL_DATOS_INVALIDOS',
+            };
+        }
+
+        // Excepciones de PERMISO
+        if (exception instanceof PermisoNombreDuplicadoException) {
+            return {
+                status: HttpStatus.CONFLICT,
+                message: exception.message,
+                errorCode: 'PERMISO_NOMBRE_DUPLICADO',
+            };
+        }
+        if (exception instanceof PermisoCodigoDuplicadoException) {
+            return {
+                status: HttpStatus.CONFLICT,
+                message: exception.message,
+                errorCode: 'PERMISO_CODIGO_DUPLICADO',
+            };
+        }
+        if (exception instanceof PermisoNoEncontradoException) {
+            return {
+                status: HttpStatus.NOT_FOUND,
+                message: exception.message,
+                errorCode: 'PERMISO_NO_ENCONTRADO',
+            };
+        }
+        if (exception instanceof PermisoInactivoException) {
+            return {
+                status: HttpStatus.FORBIDDEN,
+                message: exception.message,
+                errorCode: 'PERMISO_INACTIVO',
+            };
+        }
+        if (exception instanceof PermisoConDependenciasException) {
+            return {
+                status: HttpStatus.CONFLICT,
+                message: exception.message,
+                errorCode: 'PERMISO_CON_DEPENDENCIAS',
+            };
+        }
+        if (exception instanceof PermisoDatosInvalidosException) {
+            return {
+                status: HttpStatus.BAD_REQUEST,
+                message: exception.message,
+                errorCode: 'PERMISO_DATOS_INVALIDOS',
             };
         }
 

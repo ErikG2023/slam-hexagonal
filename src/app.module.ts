@@ -5,8 +5,9 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { databaseConfig } from './config/database.config';
 
-// Importamos nuestro nuevo módulo de roles
+// Importamos nuestros módulos
 import { RolModule } from './rol/infraestructura/config/rol.module';
+import { PermisoModule } from './permiso/infraestructura/config/permiso.module';
 
 @Module({
   imports: [
@@ -20,8 +21,9 @@ import { RolModule } from './rol/infraestructura/config/rol.module';
       useFactory: databaseConfig,
     }),
 
-    // Agregamos el módulo de roles a nuestra aplicación
+    // Módulos de negocio
     RolModule,
+    PermisoModule
   ],
   controllers: [AppController],
   providers: [AppService],
