@@ -132,26 +132,37 @@ export class TypeOrmRolRepository implements RolRepositorio {
         razon?: string;
         dependencias?: string[];
     }> {
-        // Aquí implementaríamos las validaciones de dependencias
-        // Por ahora, permitimos eliminar cualquier rol, pero en una implementación real
-        // verificaríamos si hay usuarios asignados a este rol, permisos específicos, etc.
+        const dependencias: string[] = [];
 
-        // Ejemplo de cómo se vería una validación real:
-        // const usuariosConEsteRol = await this.usuarioRepository.count({
-        //   where: { idRol: id, activo: true }
-        // });
+        // La única validación crítica: usuarios activos con este rol
+        // Nota importante: No validamos usuarios bloqueados porque:
+        // 1. Los usuarios bloqueados no pueden operar en el sistema
+        // 2. Si desbloqueamos un usuario y su rol fue eliminado, podemos restaurar el rol
+        // 3. Los usuarios bloqueados mantienen su relación con el rol en la BD
+        const usuariosActivosConEsteRol = await this.rolRepository.manager.count('usuario', {
+            where: {
+                idRol: id,
+                activo: true  // Solo usuarios activos importan para funcionalidad
+                // Deliberadamente NO filtramos por 'bloqueado' porque como dices, no importa
+            }
+        });
 
-        // if (usuariosConEsteRol > 0) {
-        //   return {
-        //     puedeEliminarse: false,
-        //     razon: `Existen ${usuariosConEsteRol} usuarios asignados a este rol`,
-        //     dependencias: ['usuarios']
-        //   };
-        // }
+        if (usuariosActivosConEsteRol > 0) {
+            // Mensaje claro que explica exactamente por qué no se puede eliminar
+            dependencias.push(`${usuariosActivosConEsteRol} usuario(s) activo(s) dependen de este rol para funcionar`);
+        }
 
-        return {
-            puedeEliminarse: true
-        };
+        // Si hay usuarios activos, explican claramente la razón operacional
+        if (dependencias.length > 0) {
+            return {
+                puedeEliminarse: false,
+                razon: `No se puede desactivar el rol porque interrumpiría el funcionamiento de usuarios activos`,
+                dependencias
+            };
+        }
+
+        // Si no hay usuarios activos, el rol se puede eliminar sin problemas operacionales
+        return { puedeEliminarse: true };
     }
 
     async contarRegistros(filtros: { activo?: boolean } = {}): Promise<number> {

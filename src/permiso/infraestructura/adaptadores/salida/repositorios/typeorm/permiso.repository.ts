@@ -160,26 +160,37 @@ export class TypeOrmPermisoRepository implements PermisoRepositorio {
         razon?: string;
         dependencias?: string[];
     }> {
-        // Aquí implementaríamos las validaciones de dependencias
-        // Por ahora, permitimos eliminar cualquier permiso, pero en una implementación real
-        // verificaríamos si hay roles asignados a este permiso, etc.
+        const dependencias: string[] = [];
 
-        // Ejemplo de cómo se vería una validación real:
-        // const rolesConEstePermiso = await this.rolPermisoRepository.count({
-        //   where: { idPermiso: id, activo: true }
-        // });
+        // Validación específica: roles activos que tienen este permiso asignado
+        // La lógica aquí es que si eliminamos un permiso que está siendo usado
+        // por roles activos, esos roles perderían funcionalidad inmediatamente
+        const rolesActivosConEstePermiso = await this.permisoRepository.manager
+            .createQueryBuilder()
+            .select('COUNT(*)', 'count')
+            .from('rol_permiso', 'rp')
+            .innerJoin('rol', 'r', 'r.id = rp.id_rol')  // Join con tabla rol
+            .where('rp.id_permiso = :idPermiso', { idPermiso: id })
+            .andWhere('rp.activo = true')    // Asignación activa
+            .andWhere('r.activo = true')     // Rol activo (esto es lo crítico)
+            .getRawOne();
 
-        // if (rolesConEstePermiso > 0) {
-        //   return {
-        //     puedeEliminarse: false,
-        //     razon: `Existen ${rolesConEstePermiso} roles asignados a este permiso`,
-        //     dependencias: ['roles']
-        //   };
-        // }
+        const cantidadRoles = parseInt(rolesActivosConEstePermiso.count) || 0;
 
-        return {
-            puedeEliminarse: true
-        };
+        if (cantidadRoles > 0) {
+            // Explicamos el impacto operacional específico
+            dependencias.push(`${cantidadRoles} rol(es) activo(s) perderían esta funcionalidad inmediatamente`);
+        }
+
+        if (dependencias.length > 0) {
+            return {
+                puedeEliminarse: false,
+                razon: `No se puede desactivar el permiso porque roles activos lo están utilizando`,
+                dependencias
+            };
+        }
+
+        return { puedeEliminarse: true };
     }
 
     async contarRegistros(filtros: { activo?: boolean } = {}): Promise<number> {
