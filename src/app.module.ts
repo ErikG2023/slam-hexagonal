@@ -8,6 +8,8 @@ import { databaseConfig } from './config/database.config';
 // Importamos nuestros módulos
 import { RolModule } from './rol/infraestructura/config/rol.module';
 import { PermisoModule } from './permiso/infraestructura/config/permiso.module';
+import { RolPermisoModule } from './rol-permiso/infraestructura/config/rol-permiso.module';
+import { UsuarioModule } from './usuario/infraestructura/config/usuario.module';
 
 @Module({
   imports: [
@@ -23,7 +25,9 @@ import { PermisoModule } from './permiso/infraestructura/config/permiso.module';
 
     // Módulos de negocio
     RolModule,
-    PermisoModule
+    PermisoModule,
+    RolPermisoModule,
+    UsuarioModule
   ],
   controllers: [AppController],
   providers: [AppService],
