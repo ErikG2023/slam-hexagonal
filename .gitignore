@@ -3,6 +3,8 @@
 /node_modules
 /build
 
+project-code.txt
+
 # Logs
 logs
 *.log

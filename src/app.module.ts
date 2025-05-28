@@ -27,7 +27,7 @@ import { UsuarioModule } from './usuario/infraestructura/config/usuario.module';
     RolModule,
     PermisoModule,
     RolPermisoModule,
-    UsuarioModule
+    UsuarioModule,
   ],
   controllers: [AppController],
   providers: [AppService],

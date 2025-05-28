@@ -10,7 +10,8 @@ async function bootstrap() {
     logger: LoggerConfig.getLogLevels(),
   });
 
-  // Ahora solo necesitamos un filtro que maneja todo inteligentemente
+  // Configurar cookie parser  <- AGREGAR ESTAS LÍNEAS
+
   app.useGlobalFilters(new GlobalExceptionFilter());
 
   app.useGlobalInterceptors(new ResponseTransformInterceptor());
@@ -30,6 +31,5 @@ async function bootstrap() {
   logger.log(`🚀 Aplicación iniciada en puerto ${port}`);
   logger.log(`🌍 Entorno: ${process.env.NODE_ENV || 'development'}`);
   logger.log(`🗄️  Base de datos: ${process.env.DB_HOST}:${process.env.DB_PORT}`);
-  logger.log(`✅ Filtro global inteligente configurado correctamente`);
 }
 bootstrap();
