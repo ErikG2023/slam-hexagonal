@@ -43,8 +43,17 @@ import {
     PersonaNoValidaException,
     RolNoValidoException as UsuarioRolNoValidoException,
     UsuarioDatosInvalidosException,
-    CredencialesInvalidasException
 } from '../../usuario/dominio/excepciones/usuario-domain.exception';
+import {
+    AutenticacionDomainException,
+    CredencialesInvalidasException,
+    TokenInvalidoException,
+    TokenExpiradoException,
+    SesionNoEncontradaException,
+    SesionExpiradaException,
+    MaximoSesionesException,
+    SesionDatosInvalidosException
+} from '../../autenticacion/dominio/excepciones/autenticacion-domain.exception';
 
 @Catch()
 export class GlobalExceptionFilter implements ExceptionFilter {
@@ -77,7 +86,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
         errorCode: string;
     } {
         if (this.isDomainException(exception)) {
-            return this.handleDomainException(exception as RolDomainException | PermisoDomainException | RolPermisoDomainException | UsuarioDomainException);
+            return this.handleDomainException(exception as RolDomainException | PermisoDomainException | RolPermisoDomainException | UsuarioDomainException | AutenticacionDomainException);
         }
 
         if (exception instanceof HttpException) {
@@ -103,10 +112,11 @@ export class GlobalExceptionFilter implements ExceptionFilter {
             exception instanceof PermisoDomainException ||
             exception instanceof RolPermisoDomainException ||
             exception instanceof UsuarioDomainException ||
+            exception instanceof AutenticacionDomainException ||
             (exception instanceof Error && exception.constructor.name.includes('DomainException'));
     }
 
-    private handleDomainException(exception: RolDomainException | PermisoDomainException | RolPermisoDomainException | UsuarioDomainException): {
+    private handleDomainException(exception: RolDomainException | PermisoDomainException | RolPermisoDomainException | UsuarioDomainException | AutenticacionDomainException): {
         status: number;
         message: string;
         errorCode: string;
@@ -193,8 +203,29 @@ export class GlobalExceptionFilter implements ExceptionFilter {
         if (exception instanceof UsuarioDatosInvalidosException) {
             return { status: HttpStatus.BAD_REQUEST, message: exception.message, errorCode: 'USUARIO_DATOS_INVALIDOS' };
         }
+
+
+        // Excepciones de AUTENTICACIÓN (NUEVAS)
         if (exception instanceof CredencialesInvalidasException) {
             return { status: HttpStatus.UNAUTHORIZED, message: exception.message, errorCode: 'CREDENCIALES_INVALIDAS' };
+        }
+        if (exception instanceof TokenInvalidoException) {
+            return { status: HttpStatus.UNAUTHORIZED, message: exception.message, errorCode: 'TOKEN_INVALIDO' };
+        }
+        if (exception instanceof TokenExpiradoException) {
+            return { status: HttpStatus.UNAUTHORIZED, message: exception.message, errorCode: 'TOKEN_EXPIRADO' };
+        }
+        if (exception instanceof SesionNoEncontradaException) {
+            return { status: HttpStatus.NOT_FOUND, message: exception.message, errorCode: 'SESION_NO_ENCONTRADA' };
+        }
+        if (exception instanceof SesionExpiradaException) {
+            return { status: HttpStatus.UNAUTHORIZED, message: exception.message, errorCode: 'SESION_EXPIRADA' };
+        }
+        if (exception instanceof MaximoSesionesException) {
+            return { status: HttpStatus.CONFLICT, message: exception.message, errorCode: 'MAXIMO_SESIONES_ALCANZADO' };
+        }
+        if (exception instanceof SesionDatosInvalidosException) {
+            return { status: HttpStatus.BAD_REQUEST, message: exception.message, errorCode: 'SESION_DATOS_INVALIDOS' };
         }
 
         return {

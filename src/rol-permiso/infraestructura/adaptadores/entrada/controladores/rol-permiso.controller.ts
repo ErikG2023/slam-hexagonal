@@ -13,6 +13,7 @@ import { ObtenerGestionPermisosRolCasoUso } from '../../../../aplicacion/casos-u
 import { SincronizarPermisosRolCasoUso } from '../../../../aplicacion/casos-uso/sincronizar-permisos-rol.caso-uso';
 import { ValidarPermisosParaAsignacionCasoUso } from '../../../../aplicacion/casos-uso/validar-permisos-para-asignacion.caso-uso';
 import { SincronizarPermisosRolDto } from '../../../../aplicacion/dtos/sincronizar-permisos-rol.dto';
+import { AuditUser } from 'src/common/decorators/audit-user.decorator';
 
 @Controller('roles')
 export class RolPermisoController {
@@ -48,12 +49,12 @@ export class RolPermisoController {
     async sincronizarPermisos(
         @Param('idRol', ParseIntPipe) idRol: number,
         @Body() sincronizarPermisosDto: SincronizarPermisosRolDto,
+        @AuditUser() userId: number
     ) {
-        const idUsuarioEjecutor = 1; // TODO: Obtener del contexto de autenticación
         return await this.sincronizarPermisosRolCasoUso.ejecutar(
             idRol,
             sincronizarPermisosDto,
-            idUsuarioEjecutor
+            userId
         );
     }
 

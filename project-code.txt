@@ -1,32 +1,5 @@
-Código extraído el 28-05-2025, 10:16:53 a. m.
+Código extraído el 29-05-2025, 10:58:01 a. m.
 
-
-// ==========================================
-// File: src\app.controller.spec.ts
-// ==========================================
-
-import { Test, TestingModule } from '@nestjs/testing';
-import { AppController } from './app.controller';
-import { AppService } from './app.service';
-
-describe('AppController', () => {
-  let appController: AppController;
-
-  beforeEach(async () => {
-    const app: TestingModule = await Test.createTestingModule({
-      controllers: [AppController],
-      providers: [AppService],
-    }).compile();
-
-    appController = app.get<AppController>(AppController);
-  });
-
-  describe('root', () => {
-    it('should return "Hello World!"', () => {
-      expect(appController.getHello()).toBe('Hello World!');
-    });
-  });
-});
 
 
 // ==========================================
@@ -45,45 +18,6 @@ export class AppController {
     // Respuesta simple de string
     return this.appService.getHello();
   }
-
-  // @Get('usuarioss')
-  // obtenerUsuarios() {
-  //   // Respuesta con array de objetos
-  //   return [
-  //     { id: 1, nombre: 'Juan Pérez', email: 'juan@ejemplo.com' },
-  //     { id: 2, nombre: 'María García', email: 'maria@ejemplo.com' },
-  //   ];
-  // }
-
-  // @Get('usuario/:id')
-  // obtenerUsuario(@Param('id') id: string) {
-  //   // Respuesta con objeto único
-  //   if (isNaN(Number(id))) {
-  //     throw new HttpException('El ID debe ser un número', HttpStatus.BAD_REQUEST);
-  //   }
-  //   return {
-  //     id: Number(id),
-  //     nombre: 'Usuario de ejemplo',
-  //     email: 'usuario@ejemplo.com',
-  //     fechaCreacion: new Date().toISOString()
-  //   };
-  // }
-
-  // @Post('usuario')
-  // crearUsuario(@Body() datosUsuario: any) {
-  //   // Respuesta de creación
-  //   return {
-  //     id: Math.floor(Math.random() * 1000),
-  //     ...datosUsuario,
-  //     fechaCreacion: new Date().toISOString()
-  //   };
-  // }
-
-  // @Get('vacio')
-  // respuestaVacia() {
-  //   // Probamos cómo maneja respuestas null/undefined
-  //   return null;
-  // }
 }
 
 // ==========================================
@@ -93,6 +27,7 @@ export class AppController {
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { APP_GUARD } from '@nestjs/core';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { databaseConfig } from './config/database.config';
@@ -122,7 +57,9 @@ import { UsuarioModule } from './usuario/infraestructura/config/usuario.module';
     UsuarioModule,
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [
+    AppService,
+  ],
 })
 export class AppModule { }
 
@@ -189,7 +126,6 @@ import {
     PersonaNoValidaException,
     RolNoValidoException as UsuarioRolNoValidoException,
     UsuarioDatosInvalidosException,
-    CredencialesInvalidasException
 } from '../../usuario/dominio/excepciones/usuario-domain.exception';
 
 @Catch(RolDomainException, PermisoDomainException, RolPermisoDomainException, UsuarioDomainException) // Agregamos UsuarioDomainException
@@ -298,10 +234,7 @@ export class DomainExceptionFilter implements ExceptionFilter {
         if (exception instanceof UsuarioDatosInvalidosException) {
             return HttpStatus.BAD_REQUEST;
         }
-        if (exception instanceof CredencialesInvalidasException) {
-            return HttpStatus.UNAUTHORIZED;
-        }
-
+        
         return HttpStatus.BAD_REQUEST;
     }
 
@@ -388,9 +321,7 @@ export class DomainExceptionFilter implements ExceptionFilter {
         if (exception instanceof UsuarioDatosInvalidosException) {
             return 'USUARIO_DATOS_INVALIDOS';
         }
-        if (exception instanceof CredencialesInvalidasException) {
-            return 'CREDENCIALES_INVALIDAS';
-        }
+        
 
         return 'DOMAIN_ERROR';
     }
@@ -445,7 +376,6 @@ import {
     PersonaNoValidaException,
     RolNoValidoException as UsuarioRolNoValidoException,
     UsuarioDatosInvalidosException,
-    CredencialesInvalidasException
 } from '../../usuario/dominio/excepciones/usuario-domain.exception';
 
 @Catch()
@@ -595,9 +525,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
         if (exception instanceof UsuarioDatosInvalidosException) {
             return { status: HttpStatus.BAD_REQUEST, message: exception.message, errorCode: 'USUARIO_DATOS_INVALIDOS' };
         }
-        if (exception instanceof CredencialesInvalidasException) {
-            return { status: HttpStatus.UNAUTHORIZED, message: exception.message, errorCode: 'CREDENCIALES_INVALIDAS' };
-        }
+
 
         return {
             status: HttpStatus.BAD_REQUEST,
@@ -810,7 +738,6 @@ async function bootstrap() {
     logger: LoggerConfig.getLogLevels(),
   });
 
-  // Configurar cookie parser  <- AGREGAR ESTAS LÍNEAS
 
   app.useGlobalFilters(new GlobalExceptionFilter());
 
@@ -5885,12 +5812,7 @@ export class UsuarioDatosInvalidosException extends UsuarioDomainException {
     }
 }
 
-// Excepción para credenciales inválidas
-export class CredencialesInvalidasException extends UsuarioDomainException {
-    constructor() {
-        super('Las credenciales proporcionadas son incorrectas');
-    }
-}
+
 
 // ==========================================
 // File: src\usuario\dominio\puertos\repositorios\usuario-repositorio.interface.ts

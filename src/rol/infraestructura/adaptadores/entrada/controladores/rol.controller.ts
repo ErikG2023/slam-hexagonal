@@ -11,6 +11,7 @@ import {
     ParseIntPipe,
     HttpStatus,
     HttpCode,
+    UseGuards,
 } from '@nestjs/common';
 import { CrearRolCasoUso } from '../../../../aplicacion/casos-uso/crear-rol.caso-uso';
 import { ActualizarRolCasoUso } from '../../../../aplicacion/casos-uso/actualizar-rol.caso-uso';
@@ -20,6 +21,11 @@ import { EliminarRolCasoUso } from '../../../../aplicacion/casos-uso/eliminar-ro
 import { RestaurarRolCasoUso } from '../../../../aplicacion/casos-uso/restaurar-rol.caso-uso';
 import { CrearRolDto } from '../../../../aplicacion/dtos/crear-rol.dto';
 import { ActualizarRolDto } from '../../../../aplicacion/dtos/actualizar-rol.dto';
+import { AuditUser } from 'src/common/decorators/audit-user.decorator';
+import { Roles } from 'src/common/decorators/roles.decorator';
+import { RolesGuard } from 'src/common/guards/roles.guard';
+import { PermissionsGuard } from 'src/common/guards/permissions.guard';
+import { Permissions } from 'src/common/decorators/permissions.decorator';
 
 @Controller('roles')
 export class RolController {
@@ -29,14 +35,18 @@ export class RolController {
         private readonly obtenerRolCasoUso: ObtenerRolCasoUso,
         private readonly listarRolesCasoUso: ListarRolesCasoUso,
         private readonly eliminarRolCasoUso: EliminarRolCasoUso,
-        private readonly restaurarRolCasoUso: RestaurarRolCasoUso, // Nueva dependencia
+        private readonly restaurarRolCasoUso: RestaurarRolCasoUso,
     ) { }
 
     @Post()
     @HttpCode(HttpStatus.CREATED)
-    async crear(@Body() crearRolDto: CrearRolDto) {
-        const idUsuarioEjecutor = 1;
-        return await this.crearRolCasoUso.ejecutar(crearRolDto, idUsuarioEjecutor);
+    @Roles('Administrador')
+    @UseGuards(RolesGuard)
+    async crear(
+        @Body() crearRolDto: CrearRolDto,
+        @AuditUser() userId: number // ✅ Usuario real del token
+    ) {
+        return await this.crearRolCasoUso.ejecutar(crearRolDto, userId);
     }
 
     /**
@@ -52,6 +62,8 @@ export class RolController {
      * - GET /roles?limite=5&offset=10&estado=todos (paginación con todos los estados)
      */
     @Get()
+    @Permissions('usuarios.listar') // ✅ Permiso específico para listar usuarios
+    @UseGuards(PermissionsGuard)
     async listar(
         @Query('estado') estado?: string,
         @Query('nombre') nombre?: string,
@@ -108,18 +120,17 @@ export class RolController {
     async actualizar(
         @Param('id', ParseIntPipe) id: number,
         @Body() actualizarRolDto: ActualizarRolDto,
+        @AuditUser() userId: number // ✅ Usuario real del token
     ) {
-        const idUsuarioEjecutor = 1;
-        return await this.actualizarRolCasoUso.ejecutar(id, actualizarRolDto, idUsuarioEjecutor);
+        return await this.actualizarRolCasoUso.ejecutar(id, actualizarRolDto, userId);
     }
 
     @Delete(':id')
-    // Removemos el @HttpCode(HttpStatus.NO_CONTENT) para usar el 200 por defecto
-    async eliminar(@Param('id', ParseIntPipe) id: number) {
-        const idUsuarioEjecutor = 1;
-
-        // Ahora devolvemos la respuesta estructurada en lugar de void
-        return await this.eliminarRolCasoUso.ejecutar(id, idUsuarioEjecutor);
+    async eliminar(
+        @Param('id', ParseIntPipe) id: number,
+        @AuditUser() userId: number // ✅ Usuario real del token
+    ) {
+        return await this.eliminarRolCasoUso.ejecutar(id, userId);
     }
 
     /**
@@ -132,8 +143,10 @@ export class RolController {
      * Ejemplo: PATCH /roles/5/restaurar
      */
     @Patch(':id/restaurar')
-    async restaurar(@Param('id', ParseIntPipe) id: number) {
-        const idUsuarioEjecutor = 1;
-        return await this.restaurarRolCasoUso.ejecutar(id, idUsuarioEjecutor);
+    async restaurar(
+        @Param('id', ParseIntPipe) id: number,
+        @AuditUser() userId: number // ✅ Usuario real del token
+    ) {
+        return await this.restaurarRolCasoUso.ejecutar(id, userId);
     }
 }

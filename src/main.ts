@@ -10,7 +10,6 @@ async function bootstrap() {
     logger: LoggerConfig.getLogLevels(),
   });
 
-  // Configurar cookie parser  <- AGREGAR ESTAS LÍNEAS
 
   app.useGlobalFilters(new GlobalExceptionFilter());
 

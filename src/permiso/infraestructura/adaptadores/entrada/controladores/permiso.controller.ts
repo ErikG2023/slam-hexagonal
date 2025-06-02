@@ -20,6 +20,7 @@ import { EliminarPermisoCasoUso } from '../../../../aplicacion/casos-uso/elimina
 import { RestaurarPermisoCasoUso } from '../../../../aplicacion/casos-uso/restaurar-permiso.caso-uso';
 import { CrearPermisoDto } from '../../../../aplicacion/dtos/crear-permiso.dto';
 import { ActualizarPermisoDto } from '../../../../aplicacion/dtos/actualizar-permiso.dto';
+import { AuditUser } from 'src/common/decorators/audit-user.decorator';
 
 @Controller('permisos')
 export class PermisoController {
@@ -34,9 +35,11 @@ export class PermisoController {
 
     @Post()
     @HttpCode(HttpStatus.CREATED)
-    async crear(@Body() crearPermisoDto: CrearPermisoDto) {
-        const idUsuarioEjecutor = 1;
-        return await this.crearPermisoCasoUso.ejecutar(crearPermisoDto, idUsuarioEjecutor);
+    async crear(
+        @Body() crearPermisoDto: CrearPermisoDto,
+        @AuditUser() userId: number // ✅ Usuario real del token
+    ) {
+        return await this.crearPermisoCasoUso.ejecutar(crearPermisoDto, userId);
     }
 
     /**
@@ -111,15 +114,17 @@ export class PermisoController {
     async actualizar(
         @Param('id', ParseIntPipe) id: number,
         @Body() actualizarPermisoDto: ActualizarPermisoDto,
+        @AuditUser() userId: number 
     ) {
-        const idUsuarioEjecutor = 1;
-        return await this.actualizarPermisoCasoUso.ejecutar(id, actualizarPermisoDto, idUsuarioEjecutor);
+        return await this.actualizarPermisoCasoUso.ejecutar(id, actualizarPermisoDto, userId);
     }
 
     @Delete(':id')
-    async eliminar(@Param('id', ParseIntPipe) id: number) {
-        const idUsuarioEjecutor = 1;
-        return await this.eliminarPermisoCasoUso.ejecutar(id, idUsuarioEjecutor);
+    async eliminar(
+        @Param('id', ParseIntPipe) id: number,
+        @AuditUser() userId: number 
+    ) {
+        return await this.eliminarPermisoCasoUso.ejecutar(id, userId);
     }
 
     /**
@@ -129,8 +134,10 @@ export class PermisoController {
      * Ejemplo: PATCH /permisos/5/restaurar
      */
     @Patch(':id/restaurar')
-    async restaurar(@Param('id', ParseIntPipe) id: number) {
-        const idUsuarioEjecutor = 1;
-        return await this.restaurarPermisoCasoUso.ejecutar(id, idUsuarioEjecutor);
+    async restaurar(
+        @Param('id', ParseIntPipe) id: number,
+        @AuditUser() userId: number 
+    ) {
+        return await this.restaurarPermisoCasoUso.ejecutar(id, userId);
     }
 }

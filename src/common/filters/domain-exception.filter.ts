@@ -36,12 +36,21 @@ import {
     PersonaNoValidaException,
     RolNoValidoException as UsuarioRolNoValidoException,
     UsuarioDatosInvalidosException,
-    CredencialesInvalidasException
 } from '../../usuario/dominio/excepciones/usuario-domain.exception';
+import {
+    AutenticacionDomainException,
+    CredencialesInvalidasException,
+    TokenInvalidoException,
+    TokenExpiradoException,
+    SesionNoEncontradaException,
+    SesionExpiradaException,
+    MaximoSesionesException,
+    SesionDatosInvalidosException
+} from '../../autenticacion/dominio/excepciones/autenticacion-domain.exception';
 
-@Catch(RolDomainException, PermisoDomainException, RolPermisoDomainException, UsuarioDomainException) // Agregamos UsuarioDomainException
+@Catch(RolDomainException, PermisoDomainException, RolPermisoDomainException, UsuarioDomainException, AutenticacionDomainException)
 export class DomainExceptionFilter implements ExceptionFilter {
-    catch(exception: RolDomainException | PermisoDomainException | RolPermisoDomainException | UsuarioDomainException, host: ArgumentsHost) {
+    catch(exception: RolDomainException | PermisoDomainException | RolPermisoDomainException | UsuarioDomainException | AutenticacionDomainException, host: ArgumentsHost) {
         const ctx = host.switchToHttp();
         const response = ctx.getResponse<Response>();
         const request = ctx.getRequest();
@@ -145,8 +154,27 @@ export class DomainExceptionFilter implements ExceptionFilter {
         if (exception instanceof UsuarioDatosInvalidosException) {
             return HttpStatus.BAD_REQUEST;
         }
+        // Excepciones de AUTENTICACIÓN
         if (exception instanceof CredencialesInvalidasException) {
             return HttpStatus.UNAUTHORIZED;
+        }
+        if (exception instanceof TokenInvalidoException) {
+            return HttpStatus.UNAUTHORIZED;
+        }
+        if (exception instanceof TokenExpiradoException) {
+            return HttpStatus.UNAUTHORIZED;
+        }
+        if (exception instanceof SesionNoEncontradaException) {
+            return HttpStatus.NOT_FOUND;
+        }
+        if (exception instanceof SesionExpiradaException) {
+            return HttpStatus.UNAUTHORIZED;
+        }
+        if (exception instanceof MaximoSesionesException) {
+            return HttpStatus.CONFLICT;
+        }
+        if (exception instanceof SesionDatosInvalidosException) {
+            return HttpStatus.BAD_REQUEST;
         }
 
         return HttpStatus.BAD_REQUEST;
@@ -235,9 +263,30 @@ export class DomainExceptionFilter implements ExceptionFilter {
         if (exception instanceof UsuarioDatosInvalidosException) {
             return 'USUARIO_DATOS_INVALIDOS';
         }
+
+        // Códigos de error para AUTENTICACIÓN
         if (exception instanceof CredencialesInvalidasException) {
             return 'CREDENCIALES_INVALIDAS';
         }
+        if (exception instanceof TokenInvalidoException) {
+            return 'TOKEN_INVALIDO';
+        }
+        if (exception instanceof TokenExpiradoException) {
+            return 'TOKEN_EXPIRADO';
+        }
+        if (exception instanceof SesionNoEncontradaException) {
+            return 'SESION_NO_ENCONTRADA';
+        }
+        if (exception instanceof SesionExpiradaException) {
+            return 'SESION_EXPIRADA';
+        }
+        if (exception instanceof MaximoSesionesException) {
+            return 'MAXIMO_SESIONES_ALCANZADO';
+        }
+        if (exception instanceof SesionDatosInvalidosException) {
+            return 'SESION_DATOS_INVALIDOS';
+        }
+
 
         return 'DOMAIN_ERROR';
     }

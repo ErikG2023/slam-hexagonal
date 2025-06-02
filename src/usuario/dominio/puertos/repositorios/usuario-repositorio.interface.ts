@@ -19,6 +19,7 @@ export interface UsuarioConDetalles {
     descripcionRol: string | null;
 }
 
+
 export interface UsuarioRepositorio {
     // Operaciones básicas CRUD
     guardar(usuario: Usuario): Promise<Usuario>;
@@ -61,4 +62,6 @@ export interface UsuarioRepositorio {
 
     // Operaciones de autenticación
     actualizarUltimoAcceso(id: number): Promise<void>;
+    
 }
+

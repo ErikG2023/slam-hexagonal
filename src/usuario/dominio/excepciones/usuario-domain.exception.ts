@@ -69,9 +69,3 @@ export class UsuarioDatosInvalidosException extends UsuarioDomainException {
     }
 }
 
-// Excepción para credenciales inválidas
-export class CredencialesInvalidasException extends UsuarioDomainException {
-    constructor() {
-        super('Las credenciales proporcionadas son incorrectas');
-    }
-}
